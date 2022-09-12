@@ -100,7 +100,7 @@ impl<VM: VMBinding> GCWorkerCopyContext<VM> {
     /// * `bytes`: The size of the object in bytes.
     /// * `semantics`: The copy semantic used for the copying.
     pub fn post_copy(&mut self, object: ObjectReference, bytes: usize, semantics: CopySemantics) {
-        // Clear forwarding bits.
+        // Clear forwarding bits. 
         object_forwarding::clear_forwarding_bits::<VM>(object);
         // If we are copying objects in mature space, we would need to mark the object as mature.
         if semantics.is_mature() && self.config.constraints.needs_log_bit {

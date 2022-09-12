@@ -48,6 +48,13 @@ impl<VM: VMBinding> SFT for ImmortalSpace<VM> {
         );
         old_value == self.mark_state
     }
+    // pinning and unpining are null op for immortal space
+    fn pin_object(&self, _object: ObjectReference) -> bool {
+        false
+    }
+    fn unpin_object(&self, _object: ObjectReference) {
+        
+    }
     fn is_movable(&self) -> bool {
         false
     }

@@ -26,6 +26,7 @@ use crate::util::opaque_pointer::*;
 use crate::util::{Address, ObjectReference};
 use crate::vm::ReferenceGlue;
 use crate::vm::VMBinding;
+use crate::scheduler::ProcessEdgesWork;
 use std::sync::atomic::Ordering;
 
 /// Initialize an MMTk instance. A VM should call this method after creating an [MMTK](../mmtk/struct.MMTK.html)
@@ -699,4 +700,32 @@ pub fn add_work_packets<VM: VMBinding>(
 /// The callback should return true if it add more work packets to the closure bucket.
 pub fn on_closure_end<VM: VMBinding>(mmtk: &'static MMTK<VM>, f: Box<dyn Send + Fn() -> bool>) {
     mmtk.scheduler.on_closure_end(f)
+}
+
+pub fn pin_object<VM: VMBinding>(mmtk: &'static MMTK<VM>, object: ObjectReference) -> bool {
+    for space in mmtk.get_plan().get_spaces() {
+        if space.address_in_space(object.to_address()) {
+            return space.pin_object(object)
+        }
+    }
+
+    return false;
+}
+
+pub fn unpin_object<VM: VMBinding>(mmtk: &'static MMTK<VM>, object: ObjectReference) {
+    for space in mmtk.get_plan().get_spaces() {
+        if space.address_in_space(object.to_address()) {
+            space.unpin_object(object)
+        }
+    }
+}
+
+pub fn is_object_pinned<VM: ProcessEdgesWork + VMBinding>(mmtk: &'static MMTK<VM>, object: ObjectReference) -> bool {
+    for space in mmtk.get_plan().get_spaces() {
+        if space.address_in_space(object.to_address()) {
+            return space.is_pinned(object)
+        }
+    }
+
+    return false;
 }

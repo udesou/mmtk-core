@@ -10,6 +10,7 @@ use std::sync::atomic::Ordering;
 
 const FORWARDING_NOT_TRIGGERED_YET: usize = 0b00;
 const BEING_FORWARDED: usize = 0b10;
+pub const PINNED : usize = 0b01;
 const FORWARDED: usize = 0b11;
 const FORWARDING_MASK: usize = 0b11;
 #[allow(unused)]
@@ -127,11 +128,11 @@ fn is_being_forwarded<VM: VMBinding>(object: ObjectReference) -> bool {
 }
 
 pub fn is_forwarded_or_being_forwarded<VM: VMBinding>(object: ObjectReference) -> bool {
-    get_forwarding_status::<VM>(object) != FORWARDING_NOT_TRIGGERED_YET
+    get_forwarding_status::<VM>(object) > PINNED
 }
 
 pub fn state_is_forwarded_or_being_forwarded(forwarding_bits: usize) -> bool {
-    forwarding_bits != FORWARDING_NOT_TRIGGERED_YET
+    forwarding_bits > PINNED
 }
 
 pub fn state_is_being_forwarded(forwarding_bits: usize) -> bool {
@@ -141,6 +142,11 @@ pub fn state_is_being_forwarded(forwarding_bits: usize) -> bool {
 /// Zero the forwarding bits of an object.
 /// This function is used on new objects.
 pub fn clear_forwarding_bits<VM: VMBinding>(object: ObjectReference) {
+    let forwarding_status = get_forwarding_status::<VM>(object);
+    if forwarding_status == PINNED {
+        return;
+    }
+
     store_metadata::<VM>(
         &VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC,
         object,

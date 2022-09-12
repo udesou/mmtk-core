@@ -72,7 +72,9 @@ pub fn load_metadata(
             }
         };
 
-        ((byte_val & mask) >> bit_shift) as usize
+        let res = ((byte_val & mask) >> bit_shift) as usize;
+
+        res
     } else if metadata_spec.num_of_bits == BITS_IN_BYTE {
         debug_assert!(
             metadata_spec.bit_offset.trailing_zeros() as usize >= LOG_BITS_IN_BYTE.into(),

@@ -1,5 +1,6 @@
 use super::work_bucket::WorkBucketStage;
 use super::*;
+use crate::memory_manager::{is_in_mmtk_spaces};
 use crate::plan::GcStatus;
 use crate::plan::ObjectsClosure;
 use crate::plan::VectorObjectQueue;
@@ -570,11 +571,27 @@ impl<E: ProcessEdgesWork> RootsWorkFactory<EdgeOf<E>> for ProcessEdgesWorkRootsW
         // Note: Node roots cannot be moved.  Currently, this implies that the plan must never
         // move objects.  However, in the future, if we start to support object pinning, then
         // moving plans that support object pinning (such as Immix) can still use node roots.
-        assert!(
-            !self.mmtk.plan.constraints().moves_objects,
-            "Attempted to add node roots when using a plan that moves objects.  Plan: {:?}",
-            *self.mmtk.options.plan
-        );
+        
+        if self.mmtk.plan.constraints().moves_objects {
+            for node in nodes.iter() {
+                if !is_in_mmtk_spaces(*node) {
+                    continue;
+                }
+    
+                let mut pinned_status = true;
+                for space in self.mmtk.get_plan().get_spaces() {
+                    if space.address_in_space(node.to_address()) {
+                        pinned_status = space.is_pinned(*node);
+                    }
+                }
+    
+                assert!(
+                    pinned_status,
+                    "Attempted to create a scan object work for an object that has not been pinned"
+                );
+            }
+        }
+        
 
         // We want to use E::create_scan_work.
         let process_edges_work = E::new(vec![], true, self.mmtk);

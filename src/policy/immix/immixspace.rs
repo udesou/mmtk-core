@@ -18,7 +18,7 @@ use crate::util::metadata::side_metadata::{self, *};
 use crate::util::metadata::{
     self, compare_exchange_metadata, load_metadata, store_metadata, MetadataSpec,
 };
-use crate::util::object_forwarding as ForwardingWord;
+use crate::util::object_forwarding::{self as ForwardingWord, PINNED};
 use crate::util::{Address, ObjectReference};
 use crate::vm::*;
 use crate::{
@@ -68,6 +68,53 @@ impl<VM: VMBinding> SFT for ImmixSpace<VM> {
         } else {
             self.is_marked(object, self.mark_state) || ForwardingWord::is_forwarded::<VM>(object)
         }
+    }
+    fn pin_object(&self, object: ObjectReference) -> bool {
+        assert!(!crate::util::object_forwarding::is_forwarded_or_being_forwarded::<VM>(object),
+                "Object to be pinned should not be forwarded or being forwarded.");
+
+        let pinned_status = load_metadata::<VM>(
+            &VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC,
+            object,
+            None,
+            Some(Ordering::SeqCst),
+        );
+
+        if pinned_status == PINNED {
+            return false;
+        }
+
+        store_metadata::<VM>(
+            &VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC,
+            object,
+            crate::util::object_forwarding::PINNED,
+            None,
+            Some(Ordering::SeqCst),
+        );
+
+        true
+    }
+    fn unpin_object(&self, object: ObjectReference) {
+        assert!(!crate::util::object_forwarding::is_forwarded_or_being_forwarded::<VM>(object),
+                "Object to be unpinned should not be forwarded or being forwarded.");
+
+        store_metadata::<VM>(
+            &VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC,
+            object,
+            0,
+            None,
+            Some(Ordering::SeqCst),
+        );
+    }
+    fn is_pinned(&self, object: ObjectReference) -> bool {
+        let pinned_status = load_metadata::<VM>(
+            &VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC,
+            object,
+            None,
+            Some(Ordering::SeqCst),
+        );
+
+        pinned_status == PINNED
     }
     fn is_movable(&self) -> bool {
         super::DEFRAG
@@ -165,6 +212,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
                 MetadataSpec::OnSide(Block::MARK_TABLE),
                 MetadataSpec::OnSide(ChunkMap::ALLOC_TABLE),
                 *VM::VMObjectModel::LOCAL_MARK_BIT_SPEC,
+                *VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC,
             ]
         } else {
             vec![
@@ -173,6 +221,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
                 MetadataSpec::OnSide(Block::MARK_TABLE),
                 MetadataSpec::OnSide(ChunkMap::ALLOC_TABLE),
                 *VM::VMObjectModel::LOCAL_MARK_BIT_SPEC,
+                *VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC,
             ]
         })
     }
@@ -437,7 +486,10 @@ impl<VM: VMBinding> ImmixSpace<VM> {
     ) -> ObjectReference {
         let copy_context = worker.get_copy_context_mut();
         debug_assert!(!super::BLOCK_ONLY);
-        let forwarding_status = ForwardingWord::attempt_to_forward::<VM>(object);
+        let forwarding_status = if Self::is_pinned(object) {
+            PINNED } else {
+                ForwardingWord::attempt_to_forward::<VM>(object)
+            };
         if ForwardingWord::state_is_forwarded_or_being_forwarded(forwarding_status) {
             // We lost the forwarding race as some other thread has set the forwarding word; wait
             // until the object has been forwarded by the winner. Note that the object may not
@@ -469,17 +521,23 @@ impl<VM: VMBinding> ImmixSpace<VM> {
             // forwarding status and return the unmoved object
             debug_assert!(
                 self.defrag.space_exhausted() || Self::is_pinned(object),
-                "Forwarded object is the same as original object {} even though it should have been copied",
-                object,
+                "Forwarded object is the same as original object {} even though it should have been copied. space_exhausted = {}, is pinned = {}, forwarding status = {}",
+                object, self.defrag.space_exhausted(), Self::is_pinned(object), forwarding_status
             );
-            ForwardingWord::clear_forwarding_bits::<VM>(object);
+            if !Self::is_pinned(object) { // only clear the forwarding bits if the object is not pinned
+                ForwardingWord::clear_forwarding_bits::<VM>(object);     
+            }
             object
         } else {
             // We won the forwarding race; actually forward and copy the object if it is not pinned
             // and we have sufficient space in our copy allocator
-            let new_object = if Self::is_pinned(object) || self.defrag.space_exhausted() {
+            let new_object = if Self::is_pinned(object) {
                 self.attempt_mark(object, self.mark_state);
-                ForwardingWord::clear_forwarding_bits::<VM>(object);
+                Block::containing::<VM>(object).set_state(BlockState::Marked);
+                object
+            } else if self.defrag.space_exhausted() {
+                self.attempt_mark(object, self.mark_state);
+                ForwardingWord::clear_forwarding_bits::<VM>(object); // only clear the forwarding bits if the object is not pinned
                 Block::containing::<VM>(object).set_state(BlockState::Marked);
                 object
             } else {
@@ -548,9 +606,16 @@ impl<VM: VMBinding> ImmixSpace<VM> {
 
     /// Check if an object is pinned.
     #[inline(always)]
-    fn is_pinned(_object: ObjectReference) -> bool {
-        // TODO(wenyuzhao): Object pinning not supported yet.
-        false
+    fn is_pinned(object: ObjectReference) -> bool {
+        true
+        // let pinned_status = load_metadata::<VM>(
+        //     &VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC,
+        //     object,
+        //     None,
+        //     Some(Ordering::SeqCst),
+        // );
+
+        // pinned_status == crate::util::object_forwarding::PINNED
     }
 
     /// Hole searching.

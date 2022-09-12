@@ -16,6 +16,7 @@ use crate::util::metadata::load_metadata;
 use crate::util::metadata::side_metadata::SideMetadataContext;
 use crate::util::metadata::side_metadata::SideMetadataSpec;
 use crate::util::metadata::store_metadata;
+use crate::util::object_forwarding::PINNED;
 use crate::util::opaque_pointer::*;
 use crate::util::treadmill::TreadMill;
 use crate::util::{Address, ObjectReference};
@@ -44,6 +45,43 @@ impl<VM: VMBinding> SFT for LargeObjectSpace<VM> {
     }
     fn is_live(&self, object: ObjectReference) -> bool {
         self.test_mark_bit(object, self.mark_state)
+    }
+    fn pin_object(&self, object: ObjectReference) -> bool {
+        assert!(!crate::util::object_forwarding::is_forwarded_or_being_forwarded::<VM>(object),
+                "Object to be pinned should not be forwarded or being forwarded.");
+
+        let pinned_status = load_metadata::<VM>(
+            &VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC,
+            object,
+            None,
+            Some(Ordering::SeqCst),
+        );
+
+        if pinned_status == PINNED {
+            return false;
+        }        
+
+        store_metadata::<VM>(
+            &VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC,
+            object,
+            crate::util::object_forwarding::PINNED,
+            None,
+            Some(Ordering::SeqCst),
+        );
+
+        true
+    }
+    fn unpin_object(&self, object: ObjectReference) {
+        assert!(!crate::util::object_forwarding::is_forwarded_or_being_forwarded::<VM>(object),
+                "Object to be unpinned should not be forwarded or being forwarded.");
+
+        store_metadata::<VM>(
+            &VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC,
+            object,
+            0,
+            None,
+            Some(Ordering::SeqCst),
+        );
     }
     fn is_movable(&self) -> bool {
         false
