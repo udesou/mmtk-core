@@ -723,7 +723,7 @@ pub fn unpin_object<VM: VMBinding>(mmtk: &'static MMTK<VM>, object: ObjectRefere
 pub fn is_object_pinned<VM: ProcessEdgesWork + VMBinding>(mmtk: &'static MMTK<VM>, object: ObjectReference) -> bool {
     for space in mmtk.get_plan().get_spaces() {
         if space.address_in_space(object.to_address()) {
-            return space.is_pinned(object)
+            return space.is_object_pinned(object)
         }
     }
 

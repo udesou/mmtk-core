@@ -106,7 +106,7 @@ impl<VM: VMBinding> SFT for ImmixSpace<VM> {
             Some(Ordering::SeqCst),
         );
     }
-    fn is_pinned(&self, object: ObjectReference) -> bool {
+    fn is_object_pinned(&self, object: ObjectReference) -> bool {
         let pinned_status = load_metadata::<VM>(
             &VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC,
             object,
@@ -607,15 +607,14 @@ impl<VM: VMBinding> ImmixSpace<VM> {
     /// Check if an object is pinned.
     #[inline(always)]
     fn is_pinned(object: ObjectReference) -> bool {
-        true
-        // let pinned_status = load_metadata::<VM>(
-        //     &VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC,
-        //     object,
-        //     None,
-        //     Some(Ordering::SeqCst),
-        // );
+        let pinned_status = load_metadata::<VM>(
+            &VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC,
+            object,
+            None,
+            Some(Ordering::SeqCst),
+        );
 
-        // pinned_status == crate::util::object_forwarding::PINNED
+        pinned_status == crate::util::object_forwarding::PINNED
     }
 
     /// Hole searching.

@@ -60,7 +60,7 @@ impl<VM: VMBinding> SFT for MarkCompactSpace<VM> {
         unimplemented!()
     }
 
-    fn is_pinned(&self, _object: ObjectReference) -> bool {
+    fn is_object_pinned(&self, _object: ObjectReference) -> bool {
         unimplemented!()
     }
 

@@ -581,7 +581,7 @@ impl<E: ProcessEdgesWork> RootsWorkFactory<EdgeOf<E>> for ProcessEdgesWorkRootsW
                 let mut pinned_status = true;
                 for space in self.mmtk.get_plan().get_spaces() {
                     if space.address_in_space(node.to_address()) {
-                        pinned_status = space.is_pinned(*node);
+                        pinned_status = space.is_object_pinned(*node);
                     }
                 }
     

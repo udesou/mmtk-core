@@ -42,7 +42,7 @@ impl<VM: VMBinding> SFT for CopySpace<VM> {
         true
     }
 
-    fn is_pinned(&self, _object: ObjectReference) -> bool {
+    fn is_object_pinned(&self, _object: ObjectReference) -> bool {
         // objects cannot be pinned in CopySpace
         return false;
     }

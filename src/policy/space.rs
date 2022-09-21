@@ -73,7 +73,7 @@ pub trait SFT {
     fn pin_object(&self, object: ObjectReference) -> bool;
     fn unpin_object(&self, object: ObjectReference);
     // if the space is not movable, the object is pinned by default
-    fn is_pinned(&self, _object: ObjectReference) -> bool {
+    fn is_object_pinned(&self, _object: ObjectReference) -> bool {
         return !self.is_movable();
     }
     /// Is the object movable, determined by the policy? E.g. the policy is non-moving,
