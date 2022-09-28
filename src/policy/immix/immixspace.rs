@@ -126,6 +126,13 @@ impl<VM: VMBinding> SFT for ImmixSpace<VM> {
     fn initialize_object_metadata(&self, _object: ObjectReference, _alloc: bool) {
         #[cfg(feature = "global_alloc_bit")]
         crate::util::alloc_bit::set_alloc_bit(_object);
+        store_metadata::<VM>(
+            &VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC,
+            _object,
+            0,
+            None,
+            Some(Ordering::SeqCst),
+        );
     }
     #[inline(always)]
     fn sft_trace_object(
@@ -356,6 +363,10 @@ impl<VM: VMBinding> ImmixSpace<VM> {
     /// Release for the immix space. This is called when a GC finished.
     /// Return whether this GC was a defrag GC, as a plan may want to know this.
     pub fn release(&mut self, major_gc: bool) -> bool {
+        if let MetadataSpec::OnSide(side) = *VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC {
+            println!("zeroing forwarding bits from {} for {} bytes", self.common().start, self.common().extent);
+            side_metadata::bzero_metadata(&side, self.common.start, self.common().extent);
+        }
         let did_defrag = self.defrag.in_defrag();
         if major_gc {
             // Update line_unavail_state for hole searching afte this GC.
@@ -607,14 +618,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
     /// Check if an object is pinned.
     #[inline(always)]
     fn is_pinned(object: ObjectReference) -> bool {
-        let pinned_status = load_metadata::<VM>(
-            &VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC,
-            object,
-            None,
-            Some(Ordering::SeqCst),
-        );
-
-        pinned_status == crate::util::object_forwarding::PINNED
+        VM::VMObjectModel::is_object_pinned(object)
     }
 
     /// Hole searching.

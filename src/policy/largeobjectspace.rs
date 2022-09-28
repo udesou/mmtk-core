@@ -199,6 +199,7 @@ impl<VM: VMBinding> LargeObjectSpace<VM> {
                     global: global_side_metadata_specs,
                     local: metadata::extract_side_metadata(&[
                         *VM::VMObjectModel::LOCAL_LOS_MARK_NURSERY_SPEC,
+                        *VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC,
                     ]),
                 },
             },

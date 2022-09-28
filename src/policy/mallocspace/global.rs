@@ -231,6 +231,7 @@ impl<VM: VMBinding> MallocSpace<VM> {
                     MetadataSpec::OnSide(ACTIVE_PAGE_METADATA_SPEC),
                     MetadataSpec::OnSide(OFFSET_MALLOC_METADATA_SPEC),
                     *VM::VMObjectModel::LOCAL_MARK_BIT_SPEC,
+                    *VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC,
                 ]),
             },
             #[cfg(debug_assertions)]
