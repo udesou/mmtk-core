@@ -43,6 +43,18 @@ impl<VM: VMBinding> SFT for CopySpace<VM> {
         true
     }
 
+    fn pin_object(&self, _object: ObjectReference) -> bool {
+        panic!("Pinning objects is not supported for CopySpace")
+    }
+
+    fn unpin_object(&self, _object: ObjectReference) {
+        // null op
+    }
+
+    fn is_object_pinned(&self, _object: ObjectReference) -> bool {
+        false
+    }
+
     #[cfg(feature = "sanity")]
     fn is_sane(&self) -> bool {
         !self.is_from_space()

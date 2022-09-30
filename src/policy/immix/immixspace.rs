@@ -68,6 +68,39 @@ impl<VM: VMBinding> SFT for ImmixSpace<VM> {
             self.is_marked(object, self.mark_state) || ForwardingWord::is_forwarded::<VM>(object)
         }
     }
+    fn pin_object(&self, object: ObjectReference) -> bool {
+        assert!(!crate::util::object_forwarding::is_forwarded_or_being_forwarded::<VM>(object),
+                "Object to be pinned should not be forwarded or being forwarded.");
+
+        let was_pinned = VM::VMObjectModel::LOCAL_PINNING_BIT_SPEC.load_atomic::<VM, u8>(
+            object,
+            None,
+            Ordering::SeqCst,
+        );
+
+        VM::VMObjectModel::LOCAL_PINNING_BIT_SPEC.store_atomic::<VM, u8>(
+            object,
+            1,
+            None,
+            Ordering::SeqCst,
+        );
+        
+        was_pinned == 1
+    }
+    fn unpin_object(&self, object: ObjectReference) {
+        assert!(!crate::util::object_forwarding::is_forwarded_or_being_forwarded::<VM>(object),
+                "Object to be unpinned should not be forwarded or being forwarded.");
+
+        VM::VMObjectModel::LOCAL_PINNING_BIT_SPEC.store_atomic::<VM, u8>(
+            object,
+            0,
+            None,
+            Ordering::SeqCst,
+        )
+    }
+    fn is_object_pinned(&self, object: ObjectReference) -> bool {
+        VM::VMObjectModel::is_object_pinned(object)
+    }
     fn is_movable(&self) -> bool {
         super::DEFRAG
     }
@@ -164,6 +197,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
                 MetadataSpec::OnSide(Block::MARK_TABLE),
                 MetadataSpec::OnSide(ChunkMap::ALLOC_TABLE),
                 *VM::VMObjectModel::LOCAL_MARK_BIT_SPEC,
+                *VM::VMObjectModel::LOCAL_PINNING_BIT_SPEC,
             ]
         } else {
             vec![
@@ -172,6 +206,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
                 MetadataSpec::OnSide(Block::MARK_TABLE),
                 MetadataSpec::OnSide(ChunkMap::ALLOC_TABLE),
                 *VM::VMObjectModel::LOCAL_MARK_BIT_SPEC,
+                *VM::VMObjectModel::LOCAL_PINNING_BIT_SPEC,
             ]
         })
     }
@@ -436,7 +471,10 @@ impl<VM: VMBinding> ImmixSpace<VM> {
     ) -> ObjectReference {
         let copy_context = worker.get_copy_context_mut();
         debug_assert!(!super::BLOCK_ONLY);
-        let forwarding_status = ForwardingWord::attempt_to_forward::<VM>(object);
+        let forwarding_status = if Self::is_pinned(object) {
+            0 } else {
+                ForwardingWord::attempt_to_forward::<VM>(object)
+            };
         if ForwardingWord::state_is_forwarded_or_being_forwarded(forwarding_status) {
             // We lost the forwarding race as some other thread has set the forwarding word; wait
             // until the object has been forwarded by the winner. Note that the object may not
@@ -547,9 +585,8 @@ impl<VM: VMBinding> ImmixSpace<VM> {
 
     /// Check if an object is pinned.
     #[inline(always)]
-    fn is_pinned(_object: ObjectReference) -> bool {
-        // TODO(wenyuzhao): Object pinning not supported yet.
-        false
+    fn is_pinned(object: ObjectReference) -> bool {
+        VM::VMObjectModel::is_object_pinned(object)
     }
 
     /// Hole searching.

@@ -63,6 +63,19 @@ impl<VM: VMBinding> SFT for MallocSpace<VM> {
         is_marked::<VM>(object, Ordering::SeqCst)
     }
 
+    // pinning and unpining are null op for malloc space 
+    fn pin_object(&self, _object: ObjectReference) -> bool {
+        false
+    }
+
+    fn unpin_object(&self, _object: ObjectReference) {
+        // nop
+    }
+
+    fn is_object_pinned(&self, _object: ObjectReference) -> bool {
+        true
+    }
+
     fn is_movable(&self) -> bool {
         false
     }
@@ -222,6 +235,7 @@ impl<VM: VMBinding> MallocSpace<VM> {
                     MetadataSpec::OnSide(ACTIVE_PAGE_METADATA_SPEC),
                     MetadataSpec::OnSide(OFFSET_MALLOC_METADATA_SPEC),
                     *VM::VMObjectModel::LOCAL_MARK_BIT_SPEC,
+                    *VM::VMObjectModel::LOCAL_PINNING_BIT_SPEC,
                 ]),
             },
             #[cfg(debug_assertions)]

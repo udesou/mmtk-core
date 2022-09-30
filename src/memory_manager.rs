@@ -406,6 +406,16 @@ pub fn gc_poll<VM: VMBinding>(mmtk: &MMTK<VM>, tls: VMMutatorThread) {
     }
 }
 
+pub fn pin_object<VM: VMBinding>(mmtk: &'static MMTK<VM>, object: ObjectReference) -> bool {
+    for space in mmtk.get_plan().get_spaces() {
+        if space.address_in_space(object.to_address()) {
+            return space.pin_object(object)
+        }
+    }
+
+    return false;
+}
+
 /// Run the main loop for the GC controller thread. This method does not return.
 ///
 /// Arguments:
