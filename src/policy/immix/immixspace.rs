@@ -69,8 +69,11 @@ impl<VM: VMBinding> SFT for ImmixSpace<VM> {
         }
     }
     fn pin_object(&self, object: ObjectReference) -> bool {
-        assert!(!crate::util::object_forwarding::is_forwarded_or_being_forwarded::<VM>(object),
-                "Object to be pinned should not be forwarded or being forwarded.");
+        #[cfg(feature = "global_alloc_bit")]
+        if crate::memory_manager::is_mmtk_object(object.to_address()) {
+            assert!(!crate::util::object_forwarding::is_forwarded_or_being_forwarded::<VM>(object),
+            "Object {} to be pinned should not be forwarded or being forwarded.", object);
+        }
 
         let was_pinned = VM::VMObjectModel::LOCAL_PINNING_BIT_SPEC.load_atomic::<VM, u8>(
             object,

@@ -416,6 +416,16 @@ pub fn pin_object<VM: VMBinding>(mmtk: &'static MMTK<VM>, object: ObjectReferenc
     return false;
 }
 
+pub fn is_pinned<VM: VMBinding>(mmtk: &'static MMTK<VM>, object: ObjectReference) -> bool {
+    for space in mmtk.get_plan().get_spaces() {
+        if space.address_in_space(object.to_address()) {
+            return space.is_object_pinned(object)
+        }
+    }
+
+    return false;
+}
+
 /// Run the main loop for the GC controller thread. This method does not return.
 ///
 /// Arguments:
