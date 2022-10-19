@@ -207,6 +207,7 @@ impl<VM: VMBinding> WorkBucket<VM> {
 #[derive(Debug, Enum, Copy, Clone, Eq, PartialEq)]
 pub enum WorkBucketStage {
     Unconstrained,
+    PrepareImmovable,
     Prepare,
     Closure,
     SoftRefClosure,

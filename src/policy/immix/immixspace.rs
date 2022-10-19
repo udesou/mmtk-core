@@ -34,6 +34,7 @@ use std::sync::{atomic::AtomicU8, Arc};
 
 pub(crate) const TRACE_KIND_FAST: TraceKind = 0;
 pub(crate) const TRACE_KIND_DEFRAG: TraceKind = 1;
+pub(crate) const TRACE_KIND_IMMOV: TraceKind = 2;
 
 pub struct ImmixSpace<VM: VMBinding> {
     common: CommonSpace<VM>,
@@ -161,7 +162,7 @@ impl<VM: VMBinding> crate::policy::gc_work::PolicyTraceObject<VM> for ImmixSpace
     ) -> ObjectReference {
         if KIND == TRACE_KIND_DEFRAG {
             self.trace_object(queue, object, copy.unwrap(), worker)
-        } else if KIND == TRACE_KIND_FAST {
+        } else if KIND == TRACE_KIND_FAST || KIND == TRACE_KIND_IMMOV {
             self.fast_trace_object(queue, object)
         } else {
             unreachable!()
@@ -180,7 +181,7 @@ impl<VM: VMBinding> crate::policy::gc_work::PolicyTraceObject<VM> for ImmixSpace
     fn may_move_objects<const KIND: TraceKind>() -> bool {
         if KIND == TRACE_KIND_DEFRAG {
             true
-        } else if KIND == TRACE_KIND_FAST {
+        } else if KIND == TRACE_KIND_FAST || KIND == TRACE_KIND_IMMOV {
             false
         } else {
             unreachable!()
@@ -507,11 +508,11 @@ impl<VM: VMBinding> ImmixSpace<VM> {
         } else if self.is_marked(object, self.mark_state) {
             // We won the forwarding race but the object is already marked so we clear the
             // forwarding status and return the unmoved object
-            debug_assert!(
-                self.defrag.space_exhausted() || Self::is_pinned(object),
-                "Forwarded object is the same as original object {} even though it should have been copied",
-                object,
-            );
+            // debug_assert!(
+            //     self.defrag.space_exhausted() || Self::is_pinned(object),
+            //     "Forwarded object is the same as original object {} even though it should have been copied",
+            //     object,
+            // );
             ForwardingWord::clear_forwarding_bits::<VM>(object);
             object
         } else {

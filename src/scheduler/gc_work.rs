@@ -4,6 +4,7 @@ use crate::memory_manager::is_in_mmtk_spaces;
 use crate::plan::GcStatus;
 use crate::plan::ObjectsClosure;
 use crate::plan::VectorObjectQueue;
+use crate::policy::immix::TRACE_KIND_IMMOV;
 use crate::util::*;
 use crate::vm::edge_shape::Edge;
 use crate::vm::*;
@@ -217,6 +218,41 @@ impl<E: ProcessEdgesWork> GCWork<E::VM> for StopMutators<E> {
 
 impl<E: ProcessEdgesWork> CoordinatorWork<E::VM> for StopMutators<E> {}
 
+/// Stop all mutators
+///
+/// Schedule a `ScanStackRoots` immediately after a mutator is paused
+///
+/// TODO: Smaller work granularity
+#[derive(Default)]
+pub struct ScanMutators<ScanEdges: ProcessEdgesWork>(PhantomData<ScanEdges>);
+
+impl<ScanEdges: ProcessEdgesWork> ScanMutators<ScanEdges> {
+    pub fn new() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<E: ProcessEdgesWork> GCWork<E::VM> for ScanMutators<E> {
+    fn do_work(&mut self, _worker: &mut GCWorker<E::VM>, mmtk: &'static MMTK<E::VM>) {
+       
+        if <E::VM as VMBinding>::VMScanning::SCAN_MUTATORS_IN_SAFEPOINT {
+            // Scan mutators
+            if <E::VM as VMBinding>::VMScanning::SINGLE_THREAD_MUTATOR_SCANNING {
+                mmtk.scheduler.work_buckets[WorkBucketStage::Prepare]
+                    .add(ScanStackRoots::<E>::new());
+            } else {
+                for mutator in <E::VM as VMBinding>::VMActivePlan::mutators() {
+                    mmtk.scheduler.work_buckets[WorkBucketStage::Prepare]
+                        .add(ScanStackRoot::<E>(mutator));
+                }
+            }
+        }
+        mmtk.scheduler.work_buckets[WorkBucketStage::Prepare].add(ScanVMSpecificRoots::<E>::new());
+    }
+}
+
+impl<E: ProcessEdgesWork> CoordinatorWork<E::VM> for ScanMutators<E> {}
+
 #[derive(Default)]
 pub struct EndOfGC;
 
@@ -329,6 +365,24 @@ impl<E: ProcessEdgesWork> GCWork<E::VM> for ScanVMSpecificRoots<E> {
         <E::VM as VMBinding>::VMScanning::scan_vm_specific_roots(worker.tls, factory);
     }
 }
+
+#[derive(Default)]
+pub struct ScanVMImmovableRoots<Edges: ProcessEdgesWork>(PhantomData<Edges>);
+
+impl<E: ProcessEdgesWork> ScanVMImmovableRoots<E> {
+    pub fn new() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<E: ProcessEdgesWork> GCWork<E::VM> for ScanVMImmovableRoots<E> {
+    fn do_work(&mut self, worker: &mut GCWorker<E::VM>, mmtk: &'static MMTK<E::VM>) {
+        trace!("ScanImmovableRoots");
+        let factory = ProcessEdgesWorkImmovableRootsWorkFactory::<E>::new(mmtk);
+        <E::VM as VMBinding>::VMScanning::scan_vm_immovable_roots(worker.tls, factory);
+    }
+}
+
 
 pub struct ProcessEdgesBase<VM: VMBinding> {
     pub edges: Vec<VM::VMEdge>,
@@ -538,6 +592,62 @@ impl<VM: VMBinding> ProcessEdgesWork for SFTProcessEdges<VM> {
     #[inline(always)]
     fn create_scan_work(&self, nodes: Vec<ObjectReference>, roots: bool) -> ScanObjects<Self> {
         ScanObjects::<Self>::new(nodes, false, roots)
+    }
+}
+
+pub struct ProcessEdgesWorkImmovableRootsWorkFactory<E: ProcessEdgesWork> {
+    mmtk: &'static MMTK<E::VM>,
+}
+
+impl<E: ProcessEdgesWork> Clone for ProcessEdgesWorkImmovableRootsWorkFactory<E> {
+    fn clone(&self) -> Self {
+        Self { mmtk: self.mmtk }
+    }
+}
+
+impl<E: ProcessEdgesWork> RootsWorkFactory<EdgeOf<E>> for ProcessEdgesWorkImmovableRootsWorkFactory<E> {
+    fn create_process_edge_roots_work(&mut self, edges: Vec<EdgeOf<E>>) {
+        crate::memory_manager::add_work_packet(
+            self.mmtk,
+            WorkBucketStage::PrepareImmovable,
+            E::new(edges, true, self.mmtk),
+        );
+    }
+
+    fn create_process_node_roots_work(&mut self, nodes: Vec<ObjectReference>) {
+        // Note: Node roots cannot be moved.  Currently, this implies that the plan must never
+        // move objects.  However, in the future, if we start to support object pinning, then
+        // moving plans that support object pinning (such as Immix) can still use node roots.
+        if self.mmtk.plan.constraints().moves_objects {
+            for node in nodes.iter() {
+                if !is_in_mmtk_spaces(*node) {
+                    continue;
+                }
+    
+                let mut pinned_status = true;
+                for space in self.mmtk.get_plan().get_spaces() {
+                    if space.address_in_space(node.to_address()) {
+                        pinned_status = space.is_object_pinned(*node);
+                    }
+                }
+    
+                assert!(
+                    pinned_status,
+                    "Attempted to create a scan object work for an object that has not been pinned"
+                );
+            }
+        }
+
+        // We want to use E::create_scan_work.
+        let process_edges_work = E::new(vec![], true, self.mmtk);
+        let work = process_edges_work.create_scan_work(nodes, true);
+        crate::memory_manager::add_work_packet(self.mmtk, WorkBucketStage::PrepareImmovable, work);
+    }
+}
+
+impl<E: ProcessEdgesWork> ProcessEdgesWorkImmovableRootsWorkFactory<E> {
+    pub fn new(mmtk: &'static MMTK<E::VM>) -> Self {
+        Self { mmtk }
     }
 }
 
@@ -830,8 +940,44 @@ impl<VM: VMBinding, P: PlanTraceObject<VM> + Plan<VM = VM>, const KIND: TraceKin
     fn process_edge(&mut self, slot: EdgeOf<Self>) {
         let object = slot.load();
         let new_object = self.trace_object(object);
+        
         if P::may_move_objects::<KIND>() {
+            if object != new_object {
+                use std::fs::OpenOptions;
+                use std::io::Write;
+        
+                let mut file = OpenOptions::new()
+                        .write(true)
+                        .append(true)
+                        .create(true)
+                        .open("/home/eduardo/mmtk-julia/copied_objs.log")
+                        .unwrap();
+        
+                if let Err(e) = writeln!(file, "{} copied from {} to {} - slot = {:?}", chrono::offset::Local::now().format("%Y-%m-%d %H:%M:%S"), object, new_object, slot) {
+                        eprintln!("Couldn't write to file: {}", e);
+                }
+            }
             slot.store(new_object);
+        }
+    }
+
+        /// Start the a scan work packet. If SCAN_OBJECTS_IMMEDIATELY, the work packet will be executed immediately, in this method.
+    /// Otherwise, the work packet will be added the Closure work bucket and will be dispatched later by the scheduler.
+    #[inline]
+    fn start_or_dispatch_scan_work(&mut self, work_packet: impl GCWork<Self::VM>) {
+        if Self::SCAN_OBJECTS_IMMEDIATELY {
+            // We execute this `scan_objects_work` immediately.
+            // This is expected to be a useful optimization because,
+            // say for _pmd_ with 200M heap, we're likely to have 50000~60000 `ScanObjects` work packets
+            // being dispatched (similar amount to `ProcessEdgesWork`).
+            // Executing these work packets now can remarkably reduce the global synchronization time.
+            self.worker().do_work(work_packet);
+        } else {
+            if KIND == TRACE_KIND_IMMOV {
+                self.mmtk.scheduler.work_buckets[WorkBucketStage::PrepareImmovable].add(work_packet);
+            } else  {
+                self.mmtk.scheduler.work_buckets[WorkBucketStage::Closure].add(work_packet);
+            } 
         }
     }
 }
