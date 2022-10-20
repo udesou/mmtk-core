@@ -513,14 +513,18 @@ impl<VM: VMBinding> ImmixSpace<VM> {
             //     "Forwarded object is the same as original object {} even though it should have been copied",
             //     object,
             // );
-            ForwardingWord::clear_forwarding_bits::<VM>(object);
+            if !Self::is_pinned(object) {
+                ForwardingWord::clear_forwarding_bits::<VM>(object);
+            }
             object
         } else {
             // We won the forwarding race; actually forward and copy the object if it is not pinned
             // and we have sufficient space in our copy allocator
             let new_object = if Self::is_pinned(object) || self.defrag.space_exhausted() {
                 self.attempt_mark(object, self.mark_state);
-                ForwardingWord::clear_forwarding_bits::<VM>(object);
+                if !Self::is_pinned(object) {
+                    ForwardingWord::clear_forwarding_bits::<VM>(object);
+                }
                 Block::containing::<VM>(object).set_state(BlockState::Marked);
                 object
             } else {

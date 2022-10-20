@@ -100,14 +100,14 @@ impl<VM: VMBinding> Plan for Immix<VM> {
         );
 
         // The blocks are not identical, clippy is wrong. Probably it does not recognize the constant type parameter.
-        // #[allow(clippy::if_same_then_else)]
-        // if in_defrag {
-        //     schedule_stop_mutator_scan_immobile_roots::<VM, ImmixGCWorkContext<VM, TRACE_KIND_IMMOV>>( scheduler, self);
-        //     schedule_remaining_work::<VM, ImmixGCWorkContext<VM, TRACE_KIND_DEFRAG>>( scheduler, self);
-        //     // scheduler.schedule_common_work::<ImmixGCWorkContext<VM, TRACE_KIND_DEFRAG>>(self);
-        // } else {
+        #[allow(clippy::if_same_then_else)]
+        if in_defrag {
+            schedule_stop_mutator_scan_immobile_roots::<VM, ImmixGCWorkContext<VM, TRACE_KIND_IMMOV>>( scheduler, self);
+            schedule_remaining_work::<VM, ImmixGCWorkContext<VM, TRACE_KIND_DEFRAG>>( scheduler, self);
+            // scheduler.schedule_common_work::<ImmixGCWorkContext<VM, TRACE_KIND_DEFRAG>>(self);
+        } else {
             scheduler.schedule_common_work::<ImmixGCWorkContext<VM, TRACE_KIND_FAST>>(self);
-        // }
+        }
     }
 
     fn get_allocator_mapping(&self) -> &'static EnumMap<AllocationSemantics, AllocatorSelector> {

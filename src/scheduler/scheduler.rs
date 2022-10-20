@@ -61,6 +61,7 @@ impl<VM: VMBinding> GCWorkScheduler<VM> {
             WorkBucketStage::Unconstrained => WorkBucket::new(true, worker_monitor.clone(), worker_group.clone()),
             WorkBucketStage::PrepareImmovable => WorkBucket::new(false, worker_monitor.clone(), worker_group.clone()),
             WorkBucketStage::Prepare => WorkBucket::new(false, worker_monitor.clone(), worker_group.clone()),
+            WorkBucketStage::ClosureImmovable => WorkBucket::new(false, worker_monitor.clone(), worker_group.clone()),
             WorkBucketStage::Closure => WorkBucket::new(false, worker_monitor.clone(), worker_group.clone()),
             WorkBucketStage::SoftRefClosure => WorkBucket::new(false, worker_monitor.clone(), worker_group.clone()),
             WorkBucketStage::WeakRefClosure => WorkBucket::new(false, worker_monitor.clone(), worker_group.clone()),

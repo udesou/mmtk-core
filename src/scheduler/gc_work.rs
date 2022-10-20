@@ -2,6 +2,7 @@ use super::work_bucket::WorkBucketStage;
 use super::*;
 use crate::memory_manager::is_in_mmtk_spaces;
 use crate::plan::GcStatus;
+use crate::plan::ImmovableObjectsClosure;
 use crate::plan::ObjectsClosure;
 use crate::plan::VectorObjectQueue;
 use crate::policy::immix::TRACE_KIND_IMMOV;
@@ -609,7 +610,7 @@ impl<E: ProcessEdgesWork> RootsWorkFactory<EdgeOf<E>> for ProcessEdgesWorkImmova
     fn create_process_edge_roots_work(&mut self, edges: Vec<EdgeOf<E>>) {
         crate::memory_manager::add_work_packet(
             self.mmtk,
-            WorkBucketStage::PrepareImmovable,
+            WorkBucketStage::ClosureImmovable,
             E::new(edges, true, self.mmtk),
         );
     }
@@ -641,7 +642,7 @@ impl<E: ProcessEdgesWork> RootsWorkFactory<EdgeOf<E>> for ProcessEdgesWorkImmova
         // We want to use E::create_scan_work.
         let process_edges_work = E::new(vec![], true, self.mmtk);
         let work = process_edges_work.create_scan_work(nodes, true);
-        crate::memory_manager::add_work_packet(self.mmtk, WorkBucketStage::PrepareImmovable, work);
+        crate::memory_manager::add_work_packet(self.mmtk, WorkBucketStage::ClosureImmovable, work);
     }
 }
 
@@ -908,7 +909,7 @@ impl<VM: VMBinding, P: PlanTraceObject<VM> + Plan<VM = VM>, const KIND: TraceKin
     for PlanProcessEdges<VM, P, KIND>
 {
     type VM = VM;
-    type ScanObjectsWorkType = PlanScanObjects<Self, P>;
+    type ScanObjectsWorkType = PlanScanObjects<Self, P, KIND>;
 
     fn new(edges: Vec<EdgeOf<Self>>, roots: bool, mmtk: &'static MMTK<VM>) -> Self {
         let base = ProcessEdgesBase::new(edges, roots, mmtk);
@@ -922,7 +923,7 @@ impl<VM: VMBinding, P: PlanTraceObject<VM> + Plan<VM = VM>, const KIND: TraceKin
         nodes: Vec<ObjectReference>,
         roots: bool,
     ) -> Self::ScanObjectsWorkType {
-        PlanScanObjects::<Self, P>::new(self.plan, nodes, false, roots)
+        PlanScanObjects::<Self, P, KIND>::new(self.plan, nodes, false, roots)
     }
 
     #[inline(always)]
@@ -942,21 +943,21 @@ impl<VM: VMBinding, P: PlanTraceObject<VM> + Plan<VM = VM>, const KIND: TraceKin
         let new_object = self.trace_object(object);
         
         if P::may_move_objects::<KIND>() {
-            if object != new_object {
-                use std::fs::OpenOptions;
-                use std::io::Write;
+            // if object != new_object {
+            //     use std::fs::OpenOptions;
+            //     use std::io::Write;
         
-                let mut file = OpenOptions::new()
-                        .write(true)
-                        .append(true)
-                        .create(true)
-                        .open("/home/eduardo/mmtk-julia/copied_objs.log")
-                        .unwrap();
+            //     let mut file = OpenOptions::new()
+            //             .write(true)
+            //             .append(true)
+            //             .create(true)
+            //             .open("/home/eduardo/mmtk-julia/copied_objs.log")
+            //             .unwrap();
         
-                if let Err(e) = writeln!(file, "{} copied from {} to {} - slot = {:?}", chrono::offset::Local::now().format("%Y-%m-%d %H:%M:%S"), object, new_object, slot) {
-                        eprintln!("Couldn't write to file: {}", e);
-                }
-            }
+            //     if let Err(e) = writeln!(file, "{} copied from {} to {} - slot = {:?}", chrono::offset::Local::now().format("%Y-%m-%d %H:%M:%S"), object, new_object, slot) {
+            //             eprintln!("Couldn't write to file: {}", e);
+            //     }
+            // }
             slot.store(new_object);
         }
     }
@@ -974,7 +975,7 @@ impl<VM: VMBinding, P: PlanTraceObject<VM> + Plan<VM = VM>, const KIND: TraceKin
             self.worker().do_work(work_packet);
         } else {
             if KIND == TRACE_KIND_IMMOV {
-                self.mmtk.scheduler.work_buckets[WorkBucketStage::PrepareImmovable].add(work_packet);
+                self.mmtk.scheduler.work_buckets[WorkBucketStage::ClosureImmovable].add(work_packet);
             } else  {
                 self.mmtk.scheduler.work_buckets[WorkBucketStage::Closure].add(work_packet);
             } 
@@ -1004,7 +1005,7 @@ impl<VM: VMBinding, P: PlanTraceObject<VM> + Plan<VM = VM>, const KIND: TraceKin
 
 /// This is an alternative to `ScanObjects` that calls the `post_scan_object` of the policy
 /// selected by the plan.  It is applicable to plans that derive `PlanTraceObject`.
-pub struct PlanScanObjects<E: ProcessEdgesWork, P: Plan<VM = E::VM> + PlanTraceObject<E::VM>> {
+pub struct PlanScanObjects<E: ProcessEdgesWork, P: Plan<VM = E::VM> + PlanTraceObject<E::VM>, const KIND: TraceKind> {
     plan: &'static P,
     buffer: Vec<ObjectReference>,
     #[allow(dead_code)]
@@ -1013,7 +1014,7 @@ pub struct PlanScanObjects<E: ProcessEdgesWork, P: Plan<VM = E::VM> + PlanTraceO
     phantom: PhantomData<E>,
 }
 
-impl<E: ProcessEdgesWork, P: Plan<VM = E::VM> + PlanTraceObject<E::VM>> PlanScanObjects<E, P> {
+impl<E: ProcessEdgesWork, P: Plan<VM = E::VM> + PlanTraceObject<E::VM>, const KIND: TraceKind> PlanScanObjects<E, P, KIND> {
     pub fn new(
         plan: &'static P,
         buffer: Vec<ObjectReference>,
@@ -1030,8 +1031,8 @@ impl<E: ProcessEdgesWork, P: Plan<VM = E::VM> + PlanTraceObject<E::VM>> PlanScan
     }
 }
 
-impl<E: ProcessEdgesWork, P: Plan<VM = E::VM> + PlanTraceObject<E::VM>> ScanObjectsWork<E::VM>
-    for PlanScanObjects<E, P>
+impl<E: ProcessEdgesWork, P: Plan<VM = E::VM> + PlanTraceObject<E::VM>, const KIND: TraceKind> ScanObjectsWork<E::VM>
+    for PlanScanObjects<E, P, KIND>
 {
     type E = E;
 
@@ -1047,10 +1048,134 @@ impl<E: ProcessEdgesWork, P: Plan<VM = E::VM> + PlanTraceObject<E::VM>> ScanObje
     fn make_another(&self, buffer: Vec<ObjectReference>) -> Self {
         Self::new(self.plan, buffer, self.concurrent, false)
     }
+
+    /// The common code for ScanObjects and PlanScanObjects.
+    fn do_work_common(
+        &self,
+        buffer: &[ObjectReference],
+        worker: &mut GCWorker<<Self::E as ProcessEdgesWork>::VM>,
+        mmtk: &'static MMTK<<Self::E as ProcessEdgesWork>::VM>,
+    ) {
+        let tls = worker.tls;
+
+        // If this is a root packet, the objects in this packet will have not been traced, yet.
+        //
+        // This step conceptually traces the edges from root slots to the objects they point to.
+        // However, VMs that deliver root objects instead of root edges are incapable of updating
+        // root slots.  Like processing an edge, we call `trace_object` on those objects, and
+        // assert the GC doesn't move those objects because we cannot store back to the slots.
+        //
+        // If this is a root packet, the `scanned_root_objects` variable will hold those root
+        // objects which are traced for the first time.
+        let scanned_root_objects = self.roots().then(|| {
+            // We create an instance of E to use its `trace_object` method and its object queue.
+            let mut process_edges_work = Self::E::new(vec![], false, mmtk);
+
+            for object in buffer.iter().copied() {
+                let new_object = process_edges_work.trace_object(object);
+                debug_assert_eq!(
+                    object, new_object,
+                    "Object moved while tracing root unmovable root object: {} -> {}",
+                    object, new_object
+                );
+            }
+
+            // This contains root objects that are visited the first time.
+            // It is sufficient to only scan these objects.
+            process_edges_work.nodes.take()
+        });
+
+        // If it is a root packet, scan the nodes that are first scanned;
+        // otherwise, scan the nodes in the buffer.
+        let objects_to_scan = scanned_root_objects.as_deref().unwrap_or(buffer);
+
+        // Then scan those objects for edges.
+        let mut scan_later = vec![];
+        {
+            
+            if KIND == TRACE_KIND_IMMOV {
+                let mut closure = ImmovableObjectsClosure::<Self::E>::new(worker);
+                for object in objects_to_scan.iter().copied() {
+                    if <P::VM as VMBinding>::VMScanning::support_edge_enqueuing(tls, object) {
+                        // If an object supports edge-enqueuing, we enqueue its edges.
+                        <P::VM as VMBinding>::VMScanning::scan_object(tls, object, &mut closure);
+                        self.post_scan_object(object);
+                    } else {
+                        // If an object does not support edge-enqueuing, we have to use
+                        // `Scanning::scan_object_and_trace_edges` and offload the job of updating the
+                        // reference field to the VM.
+                        //
+                        // However, at this point, `closure` is borrowing `worker`.
+                        // So we postpone the processing of objects that needs object enqueuing
+                        scan_later.push(object);
+                    }
+                }
+            } else {
+                let mut closure = ObjectsClosure::<Self::E>::new(worker);
+                for object in objects_to_scan.iter().copied() {
+                    if <P::VM as VMBinding>::VMScanning::support_edge_enqueuing(tls, object) {
+                        // If an object supports edge-enqueuing, we enqueue its edges.
+                        <P::VM as VMBinding>::VMScanning::scan_object(tls, object, &mut closure);
+                        self.post_scan_object(object);
+                    } else {
+                        // If an object does not support edge-enqueuing, we have to use
+                        // `Scanning::scan_object_and_trace_edges` and offload the job of updating the
+                        // reference field to the VM.
+                        //
+                        // However, at this point, `closure` is borrowing `worker`.
+                        // So we postpone the processing of objects that needs object enqueuing
+                        scan_later.push(object);
+                    }
+                }
+            }
+            
+        }
+
+        // If any object does not support edge-enqueuing, we process them now.
+        if !scan_later.is_empty() {
+            // We create an instance of E to use its `trace_object` method and its object queue.
+            let mut process_edges_work = Self::E::new(vec![], false, mmtk);
+            let mut closure = |object| process_edges_work.trace_object(object);
+
+            // Scan objects and trace their edges at the same time.
+            for object in scan_later.iter().copied() {
+                <P::VM as VMBinding>::VMScanning::scan_object_and_trace_edges(
+                    tls,
+                    object,
+                    &mut closure,
+                );
+                self.post_scan_object(object);
+            }
+
+            // Create work packets to scan adjacent objects.  We skip ProcessEdgesWork and create
+            // object-scanning packets directly, because the edges are already traced.
+            if !process_edges_work.nodes.is_empty() {
+                let next_nodes = process_edges_work.nodes.take();
+                let make_packet = |nodes| {
+                    let work_packet = self.make_another(nodes);
+                    if KIND == TRACE_KIND_IMMOV {
+                        memory_manager::add_work_packet(mmtk, WorkBucketStage::Closure, work_packet);
+                    } else {
+                        memory_manager::add_work_packet(mmtk, WorkBucketStage::ClosureImmovable, work_packet);
+                    }
+                    
+                };
+
+                // Divide the resulting nodes into appropriately sized packets.
+                if next_nodes.len() <= Self::E::CAPACITY {
+                    make_packet(next_nodes);
+                } else {
+                    for chunk in next_nodes.chunks(Self::E::CAPACITY) {
+                        make_packet(chunk.into());
+                    }
+                }
+            }
+        }
+    }
 }
 
-impl<E: ProcessEdgesWork, P: Plan<VM = E::VM> + PlanTraceObject<E::VM>> GCWork<E::VM>
-    for PlanScanObjects<E, P>
+impl<E: ProcessEdgesWork, P: Plan<VM = E::VM> + PlanTraceObject<E::VM>, const KIND: TraceKind> GCWork<E::VM>
+    for PlanScanObjects<E, P, KIND>
 {
     fn do_work(&mut self, worker: &mut GCWorker<E::VM>, mmtk: &'static MMTK<E::VM>) {
         trace!("PlanScanObjects");
