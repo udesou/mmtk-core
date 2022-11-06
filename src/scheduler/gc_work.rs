@@ -616,29 +616,6 @@ impl<E: ProcessEdgesWork> RootsWorkFactory<EdgeOf<E>> for ProcessEdgesWorkImmova
     }
 
     fn create_process_node_roots_work(&mut self, nodes: Vec<ObjectReference>) {
-        // Note: Node roots cannot be moved.  Currently, this implies that the plan must never
-        // move objects.  However, in the future, if we start to support object pinning, then
-        // moving plans that support object pinning (such as Immix) can still use node roots.
-        if self.mmtk.plan.constraints().moves_objects {
-            for node in nodes.iter() {
-                if !is_in_mmtk_spaces(*node) {
-                    continue;
-                }
-    
-                let mut pinned_status = true;
-                for space in self.mmtk.get_plan().get_spaces() {
-                    if space.address_in_space(node.to_address()) {
-                        pinned_status = space.is_object_pinned(*node);
-                    }
-                }
-    
-                assert!(
-                    pinned_status,
-                    "Attempted to create a scan object work for an object that has not been pinned"
-                );
-            }
-        }
-
         // We want to use E::create_scan_work.
         let process_edges_work = E::new(vec![], true, self.mmtk);
         let work = process_edges_work.create_scan_work(nodes, true);
@@ -943,21 +920,6 @@ impl<VM: VMBinding, P: PlanTraceObject<VM> + Plan<VM = VM>, const KIND: TraceKin
         let new_object = self.trace_object(object);
         
         if P::may_move_objects::<KIND>() {
-            // if object != new_object {
-            //     use std::fs::OpenOptions;
-            //     use std::io::Write;
-        
-            //     let mut file = OpenOptions::new()
-            //             .write(true)
-            //             .append(true)
-            //             .create(true)
-            //             .open("/home/eduardo/mmtk-julia/copied_objs.log")
-            //             .unwrap();
-        
-            //     if let Err(e) = writeln!(file, "{} copied from {} to {} - slot = {:?}", chrono::offset::Local::now().format("%Y-%m-%d %H:%M:%S"), object, new_object, slot) {
-            //             eprintln!("Couldn't write to file: {}", e);
-            //     }
-            // }
             slot.store(new_object);
         }
     }

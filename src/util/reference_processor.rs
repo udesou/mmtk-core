@@ -264,7 +264,7 @@ impl ReferenceProcessor {
                 debug_assert!(!reff.is_null());
                 debug_assert!(reff.is_in_any_space());
                 let referent = VM::VMReferenceGlue::get_referent(*reff);
-                debug_assert!(referent.is_null());
+                debug_assert!(VM::VMReferenceGlue::is_referent_cleared(referent));
             });
         }
 
