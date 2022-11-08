@@ -658,13 +658,10 @@ impl<E: ProcessEdgesWork> RootsWorkFactory<EdgeOf<E>> for ProcessEdgesWorkRootsW
                     continue;
                 }
     
-                let mut pinned_status = true;
-                for space in self.mmtk.get_plan().get_spaces() {
-                    if space.address_in_space(node.to_address()) {
-                        pinned_status = space.is_object_pinned(*node);
-                    }
-                }
-    
+                use crate::mmtk::SFT_MAP;
+                use crate::policy::sft_map::SFTMap;
+                let pinned_status = SFT_MAP.get_checked(node.to_address()).is_object_pinned(*node);
+                
                 assert!(
                     pinned_status,
                     "Attempted to create a scan object work for an object that has not been pinned"
@@ -1032,6 +1029,8 @@ impl<E: ProcessEdgesWork, P: Plan<VM = E::VM> + PlanTraceObject<E::VM>, const KI
         let scanned_root_objects = self.roots().then(|| {
             // We create an instance of E to use its `trace_object` method and its object queue.
             let mut process_edges_work = Self::E::new(vec![], false, mmtk);
+            // let mut process_edges_work = <PlanProcessEdges<E::VM, P, TRACE_KIND_IMMOV>>::new(vec![], false, mmtk);
+
 
             for object in buffer.iter().copied() {
                 let new_object = process_edges_work.trace_object(object);

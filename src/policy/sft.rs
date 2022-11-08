@@ -138,13 +138,13 @@ impl SFT for EmptySpaceSFT {
         false
     }
     fn pin_object(&self, _object: ObjectReference) -> bool {
-        unreachable!()
+        false
     }
     fn unpin_object(&self, _object: ObjectReference) {
-        unreachable!()
+        
     }
     fn is_object_pinned(&self, _object: ObjectReference) -> bool {
-        unreachable!()
+        true
     }
     fn is_movable(&self) -> bool {
         /*

@@ -103,7 +103,11 @@ impl<VM: VMBinding> SFT for ImmixSpace<VM> {
         )
     }
     fn is_object_pinned(&self, object: ObjectReference) -> bool {
-        VM::VMObjectModel::is_object_pinned(object)
+        if unsafe { VM::VMObjectModel::LOCAL_PINNING_BIT_SPEC.load::<VM, u8>(object, None) == 1 } {
+            return true
+        }
+
+        return false
     }
     fn is_movable(&self) -> bool {
         super::DEFRAG
@@ -594,7 +598,9 @@ impl<VM: VMBinding> ImmixSpace<VM> {
     /// Check if an object is pinned.
     #[inline(always)]
     fn is_pinned(object: ObjectReference) -> bool {
-        VM::VMObjectModel::is_object_pinned(object)
+        use crate::mmtk::SFT_MAP;
+        use crate::policy::sft_map::SFTMap;
+        SFT_MAP.get_checked(object.to_address()).is_object_pinned(object)
     }
 
     /// Hole searching.

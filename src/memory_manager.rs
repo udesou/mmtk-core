@@ -406,24 +406,16 @@ pub fn gc_poll<VM: VMBinding>(mmtk: &MMTK<VM>, tls: VMMutatorThread) {
     }
 }
 
-pub fn pin_object<VM: VMBinding>(mmtk: &'static MMTK<VM>, object: ObjectReference) -> bool {
-    for space in mmtk.get_plan().get_spaces() {
-        if space.address_in_space(object.to_address()) {
-            return space.pin_object(object)
-        }
-    }
-
-    return false;
+pub fn pin_object(object: ObjectReference) -> bool {
+    use crate::mmtk::SFT_MAP;
+    use crate::policy::sft_map::SFTMap;
+    SFT_MAP.get_checked(object.to_address()).pin_object(object)
 }
 
-pub fn is_pinned<VM: VMBinding>(mmtk: &'static MMTK<VM>, object: ObjectReference) -> bool {
-    for space in mmtk.get_plan().get_spaces() {
-        if space.address_in_space(object.to_address()) {
-            return space.is_object_pinned(object)
-        }
-    }
-
-    return false;
+pub fn is_pinned(object: ObjectReference) -> bool {
+    use crate::mmtk::SFT_MAP;
+    use crate::policy::sft_map::SFTMap;
+    SFT_MAP.get_checked(object.to_address()).is_object_pinned(object)
 }
 
 /// Run the main loop for the GC controller thread. This method does not return.

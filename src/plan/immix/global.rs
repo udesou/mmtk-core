@@ -104,7 +104,6 @@ impl<VM: VMBinding> Plan for Immix<VM> {
         if in_defrag {
             schedule_stop_mutator_scan_immobile_roots::<VM, ImmixGCWorkContext<VM, TRACE_KIND_IMMOV>>( scheduler, self);
             schedule_remaining_work::<VM, ImmixGCWorkContext<VM, TRACE_KIND_DEFRAG>>( scheduler, self);
-            // scheduler.schedule_common_work::<ImmixGCWorkContext<VM, TRACE_KIND_DEFRAG>>(self);
         } else {
             scheduler.schedule_common_work::<ImmixGCWorkContext<VM, TRACE_KIND_FAST>>(self);
         }

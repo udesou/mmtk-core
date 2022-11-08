@@ -409,8 +409,6 @@ pub trait ObjectModel<VM: VMBinding> {
     /// Arguments:
     /// * `object`: The object to be dumped.
     fn dump_object(object: ObjectReference);
-
-    fn is_object_pinned(object: ObjectReference) -> bool;
 }
 
 pub mod specs {
