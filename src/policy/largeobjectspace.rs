@@ -50,7 +50,7 @@ impl<VM: VMBinding> SFT for LargeObjectSpace<VM> {
         // nop
     }
     fn is_object_pinned(&self, _object: ObjectReference) -> bool {
-        return !self.is_movable();
+        false
     }
     fn is_movable(&self) -> bool {
         false

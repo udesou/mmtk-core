@@ -58,7 +58,7 @@ impl<VM: VMBinding> SFT for LockFreeImmortalSpace<VM> {
         // nop
     }
     fn is_object_pinned(&self, _object: ObjectReference) -> bool {
-        true
+        false
     }
     fn is_movable(&self) -> bool {
         unimplemented!()

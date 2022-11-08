@@ -116,9 +116,14 @@ impl<VM: VMBinding> SFT for ImmixSpace<VM> {
     fn is_sane(&self) -> bool {
         true
     }
-    fn initialize_object_metadata(&self, _object: ObjectReference, _alloc: bool) {
+    fn initialize_object_metadata(&self, object: ObjectReference, _alloc: bool) {
         #[cfg(feature = "global_alloc_bit")]
-        crate::util::alloc_bit::set_alloc_bit(_object);
+        crate::util::alloc_bit::set_alloc_bit(object);
+        VM::VMObjectModel::LOCAL_PINNING_BIT_SPEC.store_atomic::<VM, u8>(
+        object,
+        0,
+        None,
+        Ordering::SeqCst); 
     }
     #[inline(always)]
     fn sft_trace_object(

@@ -73,7 +73,7 @@ impl<VM: VMBinding> SFT for MallocSpace<VM> {
     }
 
     fn is_object_pinned(&self, _object: ObjectReference) -> bool {
-        true
+        false
     }
 
     fn is_movable(&self) -> bool {
