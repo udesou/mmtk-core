@@ -487,7 +487,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
         let forwarding_status = if Self::is_pinned(object) {
             0 } else {
                 ForwardingWord::attempt_to_forward::<VM>(object)
-            };
+        };
         if ForwardingWord::state_is_forwarded_or_being_forwarded(forwarding_status) {
             // We lost the forwarding race as some other thread has set the forwarding word; wait
             // until the object has been forwarded by the winner. Note that the object may not

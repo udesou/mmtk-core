@@ -917,6 +917,21 @@ impl<VM: VMBinding, P: PlanTraceObject<VM> + Plan<VM = VM>, const KIND: TraceKin
         let new_object = self.trace_object(object);
         
         if P::may_move_objects::<KIND>() {
+            if object != new_object {
+                 use std::fs::OpenOptions;
+                 use std::io::Write;
+
+                 let mut file = OpenOptions::new()
+                         .write(true)
+                         .append(true)
+                         .create(true)
+                         .open("/home/eduardo/mmtk-julia/copied_objs.log")
+                         .unwrap();
+
+                 if let Err(e) = writeln!(file, "{} copied from {} to {} - slot = {:?}", chrono::offset::Local::now().format("%Y-%m-%d %H:%M:%S"), object, new_object, slot) {
+                         eprintln!("Couldn't write to file: {}", e);
+                 }
+             }
             slot.store(new_object);
         }
     }
