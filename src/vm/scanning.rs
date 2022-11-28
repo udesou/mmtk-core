@@ -175,6 +175,8 @@ pub trait Scanning<VM: VMBinding> {
     /// * `factory`: The VM uses it to create work packets for scanning roots.
     fn scan_vm_specific_roots(tls: VMWorkerThread, factory: impl RootsWorkFactory<VM::VMEdge>);
 
+    fn scan_vm_immovable_roots(tls: VMWorkerThread, factory: impl RootsWorkFactory<VM::VMEdge>);
+
     /// Return whether the VM supports return barriers. This is unused at the moment.
     fn supports_return_barrier() -> bool;
 
