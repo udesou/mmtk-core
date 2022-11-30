@@ -660,10 +660,11 @@ impl<E: ProcessEdgesWork> RootsWorkFactory<EdgeOf<E>> for ProcessEdgesWorkRootsW
                 use crate::mmtk::SFT_MAP;
                 use crate::policy::sft_map::SFTMap;
                 let pinned_status = SFT_MAP.get_checked(node.to_address()).is_object_pinned(*node);
+                let is_movable = SFT_MAP.get_checked(node.to_address()).is_movable();
                 
                 assert!(
-                    pinned_status,
-                    "Attempted to create a scan object work for an object that has not been pinned"
+                    pinned_status || !is_movable,
+                    "Attempted to create a scan object work for an object {} that has not been pinned", *node
                 );
             }
         }
