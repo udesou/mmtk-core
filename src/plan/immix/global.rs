@@ -171,7 +171,7 @@ impl<E: ProcessEdgesWork> GCWork<E::VM> for StopMutatorScanImmovable<E> {
         trace!("stop_all_mutators start");
         mmtk.plan.base().prepare_for_stack_scanning();
         <E::VM as VMBinding>::VMCollection::stop_all_mutators(worker.tls, |mutator| {
-            mmtk.scheduler.work_buckets[WorkBucketStage::PrepareImmovable].add(ScanStackRoot::<E>(mutator));
+            mmtk.scheduler.work_buckets[WorkBucketStage::Prepare].add(ScanStackRoot::<E>(mutator));
         });
         trace!("stop_all_mutators end");
         mmtk.scheduler.notify_mutators_paused(mmtk);
@@ -188,7 +188,7 @@ impl<E: ProcessEdgesWork> GCWork<E::VM> for StopMutatorScanImmovable<E> {
                 }
             }
             // Scan immovable roots
-            mmtk.scheduler.work_buckets[WorkBucketStage::PrepareImmovable].add(ScanVMImmovableRoots::<PlanProcessEdges<E::VM, Immix<E::VM>, TRACE_KIND_IMMOV>>::new());
+            mmtk.scheduler.work_buckets[WorkBucketStage::Prepare].add(ScanVMImmovableRoots::<PlanProcessEdges<E::VM, Immix<E::VM>, TRACE_KIND_IMMOV>>::new());
         }
     }
 }
