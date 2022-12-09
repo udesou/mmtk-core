@@ -59,12 +59,13 @@ impl Defrag {
         exhausted_reusable_space: bool,
         full_heap_system_gc: bool,
     ) {
-        let in_defrag = super::DEFRAG
-            && (emergency_collection
-                || (collection_attempts > 1)
-                || !exhausted_reusable_space
-                || Self::DEFRAG_STRESS
-                || (collect_whole_heap && user_triggered && full_heap_system_gc));
+        let in_defrag = true;
+        // super::DEFRAG
+        //     && (emergency_collection
+        //         || (collection_attempts > 1)
+        //         || !exhausted_reusable_space
+        //         || Self::DEFRAG_STRESS
+        //         || (collect_whole_heap && user_triggered && full_heap_system_gc));
         // println!("Defrag: {}", in_defrag);
         self.in_defrag_collection
             .store(in_defrag, Ordering::Release)
