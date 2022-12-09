@@ -13,6 +13,8 @@ use crate::util::heap::HeapMeta;
 use crate::util::heap::VMRequest;
 use crate::util::heap::{MonotonePageResource, PageResource};
 use crate::util::metadata::side_metadata::{SideMetadataContext, SideMetadataSpec};
+#[cfg(feature = "addrspace_hashing")]
+use crate::util::metadata::HashedKind;
 use crate::util::metadata::{extract_side_metadata, MetadataSpec};
 use crate::util::object_forwarding;
 use crate::util::{Address, ObjectReference};
@@ -49,6 +51,21 @@ impl<VM: VMBinding> SFT for CopySpace<VM> {
     #[cfg(feature = "object_pinning")]
     fn is_object_pinned(&self, _object: ObjectReference) -> bool {
         false
+    }
+
+    #[cfg(feature = "addrspace_hashing")]
+    fn mark_hashed(&self, object: ObjectReference) {
+        VM::VMObjectModel::LOCAL_ADDRSPACE_HASHING_BIT_SPEC.mark_hashed::<VM>(object);
+    }
+
+    #[cfg(feature = "addrspace_hashing")]
+    fn mark_hashed_moved(&self, object: ObjectReference) {
+        VM::VMObjectModel::LOCAL_ADDRSPACE_HASHING_BIT_SPEC.mark_hashed_moved::<VM>(object);
+    }
+
+    #[cfg(feature = "addrspace_hashing")]
+    fn check_hashing_status(&self, object: ObjectReference) -> HashedKind {
+        VM::VMObjectModel::LOCAL_ADDRSPACE_HASHING_BIT_SPEC.check_hashing_status::<VM>(object)
     }
 
     fn is_movable(&self) -> bool {

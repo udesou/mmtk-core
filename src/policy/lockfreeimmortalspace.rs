@@ -11,6 +11,8 @@ use crate::util::conversions;
 use crate::util::heap::layout::vm_layout_constants::{AVAILABLE_BYTES, AVAILABLE_START};
 use crate::util::metadata::side_metadata::SideMetadataSanity;
 use crate::util::metadata::side_metadata::{SideMetadataContext, SideMetadataSpec};
+#[cfg(feature = "addrspace_hashing")]
+use crate::util::metadata::HashedKind;
 use crate::util::opaque_pointer::*;
 use crate::util::options::Options;
 use crate::vm::VMBinding;
@@ -61,6 +63,16 @@ impl<VM: VMBinding> SFT for LockFreeImmortalSpace<VM> {
     #[cfg(feature = "object_pinning")]
     fn is_object_pinned(&self, _object: ObjectReference) -> bool {
         true
+    }
+    #[cfg(feature = "addrspace_hashing")]
+    fn mark_hashed(&self, _object: ObjectReference) {}
+
+    #[cfg(feature = "addrspace_hashing")]
+    fn mark_hashed_moved(&self, _object: ObjectReference) {}
+
+    #[cfg(feature = "addrspace_hashing")]
+    fn check_hashing_status(&self, _object: ObjectReference) -> HashedKind {
+        crate::util::metadata::DEFAULT
     }
     fn is_movable(&self) -> bool {
         unimplemented!()

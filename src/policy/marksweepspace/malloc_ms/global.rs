@@ -36,6 +36,8 @@ use std::sync::Mutex;
 // to make sure our allocation is correct.
 #[cfg(debug_assertions)]
 const ASSERT_ALLOCATION: bool = false;
+#[cfg(feature = "addrspace_hashing")]
+use crate::util::metadata::HashedKind;
 
 /// This space uses malloc to get new memory, and performs mark-sweep for the memory.
 pub struct MallocSpace<VM: VMBinding> {
@@ -84,6 +86,17 @@ impl<VM: VMBinding> SFT for MallocSpace<VM> {
     #[cfg(feature = "object_pinning")]
     fn is_object_pinned(&self, _object: ObjectReference) -> bool {
         false
+    }
+
+    #[cfg(feature = "addrspace_hashing")]
+    fn mark_hashed(&self, _object: ObjectReference) {}
+
+    #[cfg(feature = "addrspace_hashing")]
+    fn mark_hashed_moved(&self, _object: ObjectReference) {}
+
+    #[cfg(feature = "addrspace_hashing")]
+    fn check_hashing_status(&self, _object: ObjectReference) -> HashedKind {
+        crate::util::metadata::DEFAULT
     }
 
     fn is_movable(&self) -> bool {

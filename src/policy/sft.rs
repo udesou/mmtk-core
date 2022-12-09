@@ -1,5 +1,7 @@
 use crate::plan::VectorObjectQueue;
 use crate::scheduler::GCWorker;
+#[cfg(feature = "addrspace_hashing")]
+use crate::util::metadata::HashedKind;
 use crate::util::*;
 use crate::vm::VMBinding;
 use std::marker::PhantomData;
@@ -55,6 +57,18 @@ pub trait SFT {
     fn unpin_object(&self, object: ObjectReference) -> bool;
     #[cfg(feature = "object_pinning")]
     fn is_object_pinned(&self, object: ObjectReference) -> bool;
+
+    /// Functions for marking an object that has been hashed or copied and hashed for VMs that
+    /// hash on object address. A binding may use this information to allocate an extra word
+    /// when copying an object that has been hashed, such that when querying its hash value
+    /// it is possible to return the previous object ID instead.
+    /// For policies that do not move objects marking functions are no ops, and the checking function returns HashedKind::Default
+    #[cfg(feature = "addrspace_hashing")]
+    fn mark_hashed(&self, object: ObjectReference);
+    #[cfg(feature = "addrspace_hashing")]
+    fn mark_hashed_moved(&self, object: ObjectReference);
+    #[cfg(feature = "addrspace_hashing")]
+    fn check_hashing_status(&self, object: ObjectReference) -> HashedKind;
 
     /// Is the object movable, determined by the policy? E.g. the policy is non-moving,
     /// or the object is pinned.
@@ -142,6 +156,18 @@ impl SFT for EmptySpaceSFT {
     fn is_object_pinned(&self, _object: ObjectReference) -> bool {
         false
     }
+
+    #[cfg(feature = "addrspace_hashing")]
+    fn mark_hashed(&self, _object: ObjectReference) {}
+
+    #[cfg(feature = "addrspace_hashing")]
+    fn mark_hashed_moved(&self, _object: ObjectReference) {}
+
+    #[cfg(feature = "addrspace_hashing")]
+    fn check_hashing_status(&self, _object: ObjectReference) -> HashedKind {
+        crate::util::metadata::DEFAULT
+    }
+
     fn is_movable(&self) -> bool {
         /*
          * FIXME steveb I think this should panic (ie the function should not
