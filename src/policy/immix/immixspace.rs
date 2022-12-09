@@ -14,6 +14,8 @@ use crate::util::heap::PageResource;
 use crate::util::heap::VMRequest;
 use crate::util::linear_scan::{Region, RegionIterator};
 use crate::util::metadata::side_metadata::{SideMetadataContext, SideMetadataSpec};
+#[cfg(feature = "addrspace_hashing")]
+use crate::util::metadata::HashedKind;
 use crate::util::metadata::{self, MetadataSpec};
 use crate::util::object_forwarding as ForwardingWord;
 use crate::util::{Address, ObjectReference};
@@ -74,6 +76,18 @@ impl<VM: VMBinding> SFT for ImmixSpace<VM> {
     #[cfg(feature = "object_pinning")]
     fn is_object_pinned(&self, object: ObjectReference) -> bool {
         VM::VMObjectModel::LOCAL_PINNING_BIT_SPEC.is_object_pinned::<VM>(object)
+    }
+    #[cfg(feature = "addrspace_hashing")]
+    fn mark_hashed(&self, object: ObjectReference) {
+        VM::VMObjectModel::LOCAL_ADDRSPACE_HASHING_BIT_SPEC.mark_hashed::<VM>(object);
+    }
+    #[cfg(feature = "addrspace_hashing")]
+    fn mark_hashed_moved(&self, object: ObjectReference) {
+        VM::VMObjectModel::LOCAL_ADDRSPACE_HASHING_BIT_SPEC.mark_hashed_moved::<VM>(object);
+    }
+    #[cfg(feature = "addrspace_hashing")]
+    fn check_hashing_status(&self, object: ObjectReference) -> HashedKind {
+        VM::VMObjectModel::LOCAL_ADDRSPACE_HASHING_BIT_SPEC.check_hashing_status::<VM>(object)
     }
     fn is_movable(&self) -> bool {
         super::DEFRAG

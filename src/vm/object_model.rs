@@ -84,6 +84,9 @@ pub trait ObjectModel<VM: VMBinding> {
     #[cfg(feature = "object_pinning")]
     /// The metadata specification for the pinning bit, used by most plans that need to pin objects. 1 bit.
     const LOCAL_PINNING_BIT_SPEC: VMLocalPinningBitSpec;
+    /// The metadata specification for address space hashing, used by plans that move objects and bindings that hash on object address. 2 bits.
+    #[cfg(feature = "addrspace_hashing")]
+    const LOCAL_ADDRSPACE_HASHING_BIT_SPEC: VMLocalAddrspaceHashingBitSpec;
     /// The metadata specification for the mark-and-nursery bits, used by most plans that has large object allocation. 2 bits.
     const LOCAL_LOS_MARK_NURSERY_SPEC: VMLocalLOSMarkNurserySpec;
 
@@ -537,6 +540,14 @@ pub mod specs {
     define_vm_metadata_spec!(VMLocalMarkBitSpec, false, 0, LOG_MIN_OBJECT_SIZE);
     // Pinning bit: 1 bit per object, local
     define_vm_metadata_spec!(VMLocalPinningBitSpec, false, 0, LOG_MIN_OBJECT_SIZE);
+    // Address space hashing bits: 2 bit per object, local
+    #[cfg(feature = "addrspace_hashing")]
+    define_vm_metadata_spec!(
+        VMLocalAddrspaceHashingBitSpec,
+        false,
+        1,
+        LOG_MIN_OBJECT_SIZE
+    );
     // Mark&nursery bits for LOS: 2 bit per page, local
     define_vm_metadata_spec!(VMLocalLOSMarkNurserySpec, false, 1, LOG_BYTES_IN_PAGE);
 }

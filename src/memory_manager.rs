@@ -21,6 +21,8 @@ use crate::util::alloc::allocators::AllocatorSelector;
 use crate::util::constants::{LOG_BYTES_IN_PAGE, MIN_OBJECT_SIZE};
 use crate::util::heap::layout::vm_layout_constants::HEAP_END;
 use crate::util::heap::layout::vm_layout_constants::HEAP_START;
+#[cfg(feature = "addrspace_hashing")]
+use crate::util::metadata::HashedKind;
 use crate::util::opaque_pointer::*;
 use crate::util::{Address, ObjectReference};
 use crate::vm::edge_shape::MemorySlice;
@@ -759,6 +761,45 @@ pub fn add_finalizer<VM: VMBinding>(
     }
 
     mmtk.finalizable_processor.lock().unwrap().add(object);
+}
+
+/// Mark an object as hashed.
+///
+/// Arguments:
+/// * `object`: The object to be marked
+#[cfg(feature = "addrspace_hashing")]
+pub fn mark_hashed<VM: VMBinding>(object: ObjectReference) {
+    use crate::mmtk::SFT_MAP;
+    use crate::policy::sft_map::SFTMap;
+    SFT_MAP
+        .get_checked(object.to_address::<VM>())
+        .mark_hashed(object)
+}
+
+/// Mark an object that has been moved and has been hashed.
+///
+/// Arguments:
+/// * `object`: The object to be marked
+#[cfg(feature = "addrspace_hashing")]
+pub fn mark_hashed_moved<VM: VMBinding>(object: ObjectReference) {
+    use crate::mmtk::SFT_MAP;
+    use crate::policy::sft_map::SFTMap;
+    SFT_MAP
+        .get_checked(object.to_address::<VM>())
+        .mark_hashed_moved(object)
+}
+
+/// Check if an object has been hashed or hashed and moved.
+///
+/// Arguments:
+/// * `object`: The object to be checked
+#[cfg(feature = "addrspace_hashing")]
+pub fn check_hashing_status<VM: VMBinding>(object: ObjectReference) -> HashedKind {
+    use crate::mmtk::SFT_MAP;
+    use crate::policy::sft_map::SFTMap;
+    SFT_MAP
+        .get_checked(object.to_address::<VM>())
+        .check_hashing_status(object)
 }
 
 /// Pin an object. MMTk will make sure that the object does not move

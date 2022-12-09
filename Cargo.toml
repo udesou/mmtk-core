@@ -88,6 +88,9 @@ is_mmtk_object = ["global_alloc_bit"]
 # Enable object pinning, in particular, enable pinning/unpinning, and its metadata
 object_pinning = []
 
+# Support for address space hashing
+addrspace_hashing = []
+
 # The following two features are useful for using Immix for VMs that do not support moving GC.
 
 # Disable defragmentation for ImmixSpace.  This makes Immix a non-moving plan.

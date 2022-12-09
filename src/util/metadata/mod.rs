@@ -228,4 +228,17 @@ pub(crate) mod log_bit;
 pub(crate) mod mark_bit;
 pub(crate) mod pin_bit;
 
+#[cfg(feature = "addrspace_hashing")]
+pub type HashedKind = u8;
+
+#[cfg(feature = "addrspace_hashing")]
+pub(crate) const DEFAULT: HashedKind = 0;
+#[cfg(feature = "addrspace_hashing")]
+pub(crate) const HASHED: HashedKind = 1;
+#[cfg(feature = "addrspace_hashing")]
+pub(crate) const HASHED_MOVED: HashedKind = 2;
+
+#[cfg(feature = "addrspace_hashing")]
+pub(crate) mod addr_hashing_bit;
+
 pub use global::*;

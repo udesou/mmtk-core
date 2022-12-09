@@ -15,6 +15,8 @@ use crate::policy::space::SpaceOptions;
 use crate::util::heap::layout::heap_layout::{Mmapper, VMMap};
 use crate::util::heap::HeapMeta;
 use crate::util::metadata::side_metadata::{SideMetadataContext, SideMetadataSpec};
+#[cfg(feature = "addrspace_hashing")]
+use crate::util::metadata::HashedKind;
 use crate::vm::{ObjectModel, VMBinding};
 
 /// This type implements a simple immortal collection
@@ -56,6 +58,16 @@ impl<VM: VMBinding> SFT for ImmortalSpace<VM> {
     #[cfg(feature = "object_pinning")]
     fn is_object_pinned(&self, _object: ObjectReference) -> bool {
         true
+    }
+    #[cfg(feature = "addrspace_hashing")]
+    fn mark_hashed(&self, _object: ObjectReference) {}
+
+    #[cfg(feature = "addrspace_hashing")]
+    fn mark_hashed_moved(&self, _object: ObjectReference) {}
+
+    #[cfg(feature = "addrspace_hashing")]
+    fn check_hashing_status(&self, _object: ObjectReference) -> HashedKind {
+        crate::util::metadata::DEFAULT
     }
     fn is_movable(&self) -> bool {
         false
