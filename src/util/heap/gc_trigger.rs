@@ -143,7 +143,7 @@ pub struct MemBalancerTrigger {
 impl<VM: VMBinding> GCTriggerPolicy<VM> for MemBalancerTrigger {
     fn on_gc_end(&self, mmtk: &'static MMTK<VM>) {
         // live memory after a GC
-        let live = mmtk.plan.get_used_pages() as f64;
+        let live = mmtk.plan.get_reserved_pages() as f64;
         // We use a simplified version of mem balancer. Instead of collecting allocation/collection speed and a constant c,
         // we use a fixed constant 4096 instead.
         let optimal_heap = (live + (live * 4096f64).sqrt()) as usize;
