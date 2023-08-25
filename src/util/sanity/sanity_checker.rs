@@ -1,3 +1,4 @@
+use super::*;
 use crate::plan::Plan;
 use crate::scheduler::gc_work::*;
 use crate::util::ObjectReference;
@@ -19,14 +20,7 @@ pub struct SanityChecker<ES: Edge> {
     root_edges: Vec<Vec<ES>>,
     /// Cached root nodes for sanity root scanning
     root_nodes: Vec<Vec<ObjectReference>>,
-    pub(crate) shapes: Vec<Vec<(ObjectReference, Shape)>>,
-}
-
-#[derive(serde::Serialize, Debug)]
-pub enum Shape {
-    ValArray,
-    ObjArray,
-    Scalar(Vec<isize>),
+    pub(crate) iter: ShapesIteration,
 }
 
 lazy_static! {
@@ -45,7 +39,7 @@ impl<ES: Edge> SanityChecker<ES> {
             refs: HashSet::new(),
             root_edges: vec![],
             root_nodes: vec![],
-            shapes: vec![],
+            iter: ShapesIteration { epochs: vec![] },
         }
     }
 
@@ -142,7 +136,10 @@ impl<P: Plan> GCWork<P::VM> for SanityPrepare<P> {
             let mut sanity_checker = mmtk.sanity_checker.lock().unwrap();
             sanity_checker.refs.clear();
             if mmtk.inside_harness.load(Ordering::Relaxed) {
-                sanity_checker.shapes.push(vec![]);
+                sanity_checker
+                    .iter
+                    .epochs
+                    .push(ShapesEpoch { shapes: vec![] });
             }
         }
         for mutator in <P::VM as VMBinding>::VMActivePlan::mutators() {
@@ -245,30 +242,48 @@ impl<VM: VMBinding> ProcessEdgesWork for SanityGCProcessEdges<VM> {
             if self.mmtk().inside_harness.load(Ordering::Relaxed) {
                 if <VM as VMBinding>::VMScanning::is_val_array(object) {
                     sanity_checker
-                        .shapes
+                        .iter
+                        .epochs
                         .last_mut()
                         .unwrap()
-                        .push((object, Shape::ValArray));
+                        .shapes
+                        .push(Shape {
+                            kind: shape::Kind::ValArray as i32,
+                            object: object.value() as u64,
+                            offsets: vec![],
+                        });
                 } else if <VM as VMBinding>::VMScanning::is_obj_array(object) {
                     sanity_checker
-                        .shapes
+                        .iter
+                        .epochs
                         .last_mut()
                         .unwrap()
-                        .push((object, Shape::ObjArray));
+                        .shapes
+                        .push(Shape {
+                            kind: shape::Kind::ObjArray as i32,
+                            object: object.value() as u64,
+                            offsets: vec![],
+                        });
                 } else {
                     let mut s = vec![];
                     <VM as VMBinding>::VMScanning::scan_object(
                         self.worker().tls,
                         object,
                         &mut |e: <VM as VMBinding>::VMEdge| {
-                            s.push(e.as_address().as_usize() as isize - object.value() as isize);
+                            s.push(e.as_address().as_usize() as i64 - object.value() as i64);
                         },
                     );
                     sanity_checker
-                        .shapes
+                        .iter
+                        .epochs
                         .last_mut()
                         .unwrap()
-                        .push((object, Shape::Scalar(s)));
+                        .shapes
+                        .push(Shape {
+                            kind: shape::Kind::Scalar as i32,
+                            object: object.value() as u64,
+                            offsets: s,
+                        });
                 }
             }
         }

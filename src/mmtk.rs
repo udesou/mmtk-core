@@ -15,6 +15,7 @@ use crate::util::sanity::sanity_checker::SanityChecker;
 use crate::vm::ReferenceGlue;
 use crate::vm::VMBinding;
 use std::default::Default;
+use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -156,11 +157,12 @@ impl<VM: VMBinding> MMTK<VM> {
         self.inside_harness.store(false, Ordering::SeqCst);
         #[cfg(feature = "sanity")]
         {
-            use std::io::Write;
-            let file = std::fs::File::create("shapes.json").unwrap();
-            let mut writer = std::io::BufWriter::new(file);
-            serde_json::to_writer(&mut writer, &self.sanity_checker.lock().unwrap().shapes).unwrap();
-            writer.flush().unwrap();
+            use prost::Message;
+            use std::fs::File;
+            let mut buf = Vec::new();
+            self.sanity_checker.lock().unwrap().iter.encode(&mut buf).unwrap();
+            let mut file = File::create("shapes.binbp").unwrap();
+            file.write_all(&buf).unwrap();
         }
         probe!(mmtk, harness_end);
     }
