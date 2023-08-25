@@ -4,14 +4,15 @@
 
 import util.sanity.shapes_pb2 as shapes_pb2
 import sys
+import zstandard
 from collections import defaultdict
 
 count = defaultdict(int)
 total_count = 0
 
-with open(sys.argv[1], "rb") as f:
+with zstandard.open(sys.argv[1], "rb") as fd:
     shapes_iter = shapes_pb2.ShapesIteration()
-    shapes_iter.ParseFromString(f.read())
+    shapes_iter.ParseFromString(fd.readall())
     for epoch in shapes_iter.epochs:
         for shape in epoch.shapes:
             if shape.kind is shapes_pb2.Shape.Kind.ValArray:

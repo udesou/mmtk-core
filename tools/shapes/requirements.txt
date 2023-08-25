@@ -1,1 +1,5 @@
+autopep8==2.0.2
 protobuf==4.24.1
+pycodestyle==2.11.0
+tomli==2.0.1
+zstandard==0.21.0
