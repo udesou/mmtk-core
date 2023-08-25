@@ -159,10 +159,13 @@ impl<VM: VMBinding> MMTK<VM> {
         {
             use prost::Message;
             use std::fs::File;
+
+            let file = File::create("shapes.binbp.zst").unwrap();
+            let mut writer = zstd::Encoder::new(file, 0).unwrap();
             let mut buf = Vec::new();
             self.sanity_checker.lock().unwrap().iter.encode(&mut buf).unwrap();
-            let mut file = File::create("shapes.binbp").unwrap();
-            file.write_all(&buf).unwrap();
+
+            writer.write_all(&buf).unwrap();
         }
         probe!(mmtk, harness_end);
     }
