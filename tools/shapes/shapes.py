@@ -43,7 +43,7 @@ def tabulate(counts: Dict[str, Dict[Any, Tuple[float, int]]]):
             agg[pattern] += norm
     agg = {pattern: s / len(counts) for pattern, s in agg.items()}
     bms = list(sorted(counts.keys()))
-    print("rank,reference_pattern,mean,cumulative_mean,{}".format(",".join(bms)))
+    print("rank\treference_pattern\tmean\tcumulative_mean\t{}".format("\t".join(bms)))
     cum_mean = 0
     for i, (pattern, mean) in enumerate(sorted(agg.items(), key=lambda x: -x[1]), 1):
         cum_mean += mean

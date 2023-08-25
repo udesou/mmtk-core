@@ -1,4 +1,4 @@
-rank,reference_pattern,mean,cumulative_mean,avrora,biojava,cassandra,eclipse,fop,graphchi,h2,h2o,jme,jython,kafka,luindex,lusearch,pmd,spring,sunflow,tomcat,xalan,zxing
+rank	reference_pattern	mean	cumulative_mean	avrora	biojava	cassandra	eclipse	fop	graphchi	h2	h2o	jme	jython	kafka	luindex	lusearch	pmd	spring	sunflow	tomcat	xalan	zxing
 1	NoRef	28.69	28.69	22.97	24.01	28.65	40.03	29.02	60.24	19.06	31.61	29.04	27.50	21.83	27.10	21.85	16.89	28.12	34.30	23.21	26.31	33.33
 2	(16,)	17.00	45.68	25.14	21.09	12.25	19.52	21.97	3.83	3.22	17.37	21.36	22.69	19.76	22.61	15.79	11.48	15.32	6.39	27.86	19.13	16.14
 3	ObjArray	9.31	54.99	5.56	8.99	8.42	9.11	7.71	1.74	34.79	7.09	9.20	5.97	7.69	11.32	11.39	12.18	10.16	2.36	7.84	8.30	6.99
