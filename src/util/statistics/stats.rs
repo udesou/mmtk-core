@@ -45,7 +45,7 @@ impl SharedStats {
 /// The struct holds basic GC statistics, like the GC count,
 /// and an array of counters.
 pub struct Stats {
-    gc_count: AtomicUsize,
+    pub gc_count: AtomicUsize,
     total_time: Arc<Mutex<Timer>>,
     // crate `pfm` uses libpfm4 under the hood for parsing perf event names
     // Initialization of libpfm4 is required before we can use `PerfEvent` types

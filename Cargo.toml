@@ -52,6 +52,8 @@ strum = "0.24"
 strum_macros = "0.24"
 # Fix on 0.29.5 so we have MSRV 1.61. Remove this when we update MSRV
 sysinfo = "=0.29.5"
+serde = {version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 
 [dev-dependencies]
 paste = "1.0.8"

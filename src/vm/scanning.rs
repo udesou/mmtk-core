@@ -304,4 +304,12 @@ pub trait Scanning<VM: VMBinding> {
         _tracer_context: impl ObjectTracerContext<VM>,
     ) {
     }
+
+    fn is_obj_array(_o: ObjectReference) -> bool {
+        unreachable!()
+    }
+
+    fn is_val_array(_o: ObjectReference) -> bool {
+        unreachable!()
+    }
 }

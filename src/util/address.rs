@@ -1,5 +1,6 @@
 use atomic_traits::Atomic;
 
+use serde::Serialize;
 use std::fmt;
 use std::mem;
 use std::ops::*;
@@ -18,7 +19,7 @@ pub type ByteOffset = isize;
 /// (memory wise and time wise). The idea is from the paper
 /// High-level Low-level Programming (VEE09) and JikesRVM.
 #[repr(transparent)]
-#[derive(Copy, Clone, Eq, Hash, PartialOrd, Ord, PartialEq)]
+#[derive(Copy, Clone, Eq, Hash, PartialOrd, Ord, PartialEq, Serialize)]
 pub struct Address(usize);
 
 /// Address + ByteSize (positive)
@@ -461,7 +462,7 @@ use crate::vm::VMBinding;
 /// methods in [`crate::vm::ObjectModel`]. Major refactoring is needed in MMTk to allow
 /// the opaque `ObjectReference` type, and we haven't seen a use case for now.
 #[repr(transparent)]
-#[derive(Copy, Clone, Eq, Hash, PartialOrd, Ord, PartialEq)]
+#[derive(Copy, Clone, Eq, Hash, PartialOrd, Ord, PartialEq, serde::Serialize)]
 pub struct ObjectReference(usize);
 
 impl ObjectReference {

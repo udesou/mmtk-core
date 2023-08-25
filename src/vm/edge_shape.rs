@@ -55,6 +55,10 @@ pub trait Edge: Copy + Send + Debug + PartialEq + Eq + Hash {
     fn prefetch_store(&self) {
         // no-op by default
     }
+
+    fn as_address(&self) -> Address {
+        Address::ZERO
+    }
 }
 
 /// A simple edge implementation that represents a word-sized slot where an ObjectReference value
@@ -113,6 +117,10 @@ impl Edge for Address {
 
     fn store(&self, object: ObjectReference) {
         unsafe { Address::store(*self, object) }
+    }
+
+    fn as_address(&self) -> Address {
+        *self
     }
 }
 
