@@ -1,6 +1,5 @@
 use crate::plan::Plan;
 use crate::scheduler::gc_work::*;
-use crate::util::Address;
 use crate::util::ObjectReference;
 use crate::vm::edge_shape::Edge;
 use crate::vm::*;
@@ -8,9 +7,6 @@ use crate::MMTK;
 use crate::{scheduler::*, ObjectQueue};
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::fs::File;
-use std::io::BufWriter;
-use std::io::Write;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
@@ -23,13 +19,14 @@ pub struct SanityChecker<ES: Edge> {
     root_edges: Vec<Vec<ES>>,
     /// Cached root nodes for sanity root scanning
     root_nodes: Vec<Vec<ObjectReference>>,
+    pub(crate) shapes: Vec<Vec<(ObjectReference, Shape)>>,
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Debug)]
 pub enum Shape {
     ValArray,
     ObjArray,
-    Scalar(Vec<Address>),
+    Scalar(Vec<isize>),
 }
 
 lazy_static! {
@@ -48,6 +45,7 @@ impl<ES: Edge> SanityChecker<ES> {
             refs: HashSet::new(),
             root_edges: vec![],
             root_nodes: vec![],
+            shapes: vec![],
         }
     }
 
@@ -143,7 +141,9 @@ impl<P: Plan> GCWork<P::VM> for SanityPrepare<P> {
         {
             let mut sanity_checker = mmtk.sanity_checker.lock().unwrap();
             sanity_checker.refs.clear();
-            *SANITY_SLOTS.lock().unwrap() = HashMap::new();
+            if mmtk.inside_harness.load(Ordering::Relaxed) {
+                sanity_checker.shapes.push(vec![]);
+            }
         }
         for mutator in <P::VM as VMBinding>::VMActivePlan::mutators() {
             mmtk.scheduler.work_buckets[WorkBucketStage::Prepare]
@@ -173,12 +173,6 @@ impl<P: Plan> GCWork<P::VM> for SanityRelease<P> {
         {
             let mut sanity_checker = mmtk.sanity_checker.lock().unwrap();
             sanity_checker.clear_roots_cache();
-            let gc_count = mmtk.plan.base().stats.gc_count.load(Ordering::Relaxed);
-            let file = File::create(format!("slots_{}.json", gc_count)).unwrap();
-            let mut writer = BufWriter::new(file);
-            serde_json::to_writer(&mut writer, &*SANITY_SLOTS.lock().unwrap()).unwrap();
-            writer.flush().unwrap();
-            // println!("{:?}", *SANITY_SLOTS.lock().unwrap());
         }
         for mutator in <P::VM as VMBinding>::VMActivePlan::mutators() {
             mmtk.scheduler.work_buckets[WorkBucketStage::Release]
@@ -248,21 +242,34 @@ impl<VM: VMBinding> ProcessEdgesWork for SanityGCProcessEdges<VM> {
             trace!("Sanity mark object {}", object);
             self.nodes.enqueue(object);
 
-            let mut slots = SANITY_SLOTS.lock().unwrap();
-            if <VM as VMBinding>::VMScanning::is_val_array(object) {
-                slots.insert(object, Shape::ValArray);
-            } else if <VM as VMBinding>::VMScanning::is_obj_array(object) {
-                slots.insert(object, Shape::ObjArray);
-            } else {
-                let mut s = vec![];
-                <VM as VMBinding>::VMScanning::scan_object(
-                    self.worker().tls,
-                    object,
-                    &mut |e: <VM as VMBinding>::VMEdge| {
-                        s.push(e.as_address());
-                    },
-                );
-                slots.insert(object, Shape::Scalar(s));
+            if self.mmtk().inside_harness.load(Ordering::Relaxed) {
+                if <VM as VMBinding>::VMScanning::is_val_array(object) {
+                    sanity_checker
+                        .shapes
+                        .last_mut()
+                        .unwrap()
+                        .push((object, Shape::ValArray));
+                } else if <VM as VMBinding>::VMScanning::is_obj_array(object) {
+                    sanity_checker
+                        .shapes
+                        .last_mut()
+                        .unwrap()
+                        .push((object, Shape::ObjArray));
+                } else {
+                    let mut s = vec![];
+                    <VM as VMBinding>::VMScanning::scan_object(
+                        self.worker().tls,
+                        object,
+                        &mut |e: <VM as VMBinding>::VMEdge| {
+                            s.push(e.as_address().as_usize() as isize - object.value() as isize);
+                        },
+                    );
+                    sanity_checker
+                        .shapes
+                        .last_mut()
+                        .unwrap()
+                        .push((object, Shape::Scalar(s)));
+                }
             }
         }
 
