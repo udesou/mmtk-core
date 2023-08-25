@@ -160,7 +160,7 @@ impl<VM: VMBinding> MMTK<VM> {
             use prost::Message;
             use std::fs::File;
 
-            let file = File::create("shapes.binbp.zst").unwrap();
+            let file = File::create("shapes.binpb.zst").unwrap();
             let mut writer = zstd::Encoder::new(file, 0).unwrap().auto_finish();
             let mut buf = Vec::new();
             self.sanity_checker.lock().unwrap().iter.encode(&mut buf).unwrap();

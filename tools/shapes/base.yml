@@ -1,0 +1,91 @@
+includes:
+  - "$RUNNING_NG_PACKAGE_DATA/base/runbms.yml"
+
+overrides:
+  "invocations": 1
+  "modifiers.c2.excludes.dacapochopin-rc1":
+    - tradebeans
+    - tradesoap
+
+suites:
+  dacapochopin-rc1:
+    type: DaCapo
+    release: evaluation
+    path: /home/zixianc/mmtk-ebpf/benchmarks/dacapo-23.8-chopin-RC1.jar
+    minheap: mmtk-openjdk-11-MarkCompact
+    minheap_values:
+      mmtk-openjdk-11-MarkCompact:
+        avrora: 8
+        batik: 426
+        biojava: 197
+        cassandra: 117
+        eclipse: 439
+        fop: 24
+        graphchi: 187
+        h2: 1122
+        h2o: 893
+        jme: 236
+        jython: 48
+        kafka: 233
+        luindex: 25
+        lusearch: 36
+        pmd: 291
+        spring: 110
+        sunflow: 37
+        tradebeans: .inf
+        tradesoap: .inf
+        tomcat: 55
+        xalan: 22
+        zxing: 427
+    timing_iteration: 3
+    timeout: 1200
+    callback: "probe.DacapoChopinCallback"
+
+modifiers:
+  probes_cp:
+    type: JVMClasspath
+    val: "/home/zixianc/probes/out/probes.jar"
+  probes:
+    type: JVMArg
+    val: "-Djava.library.path=/home/zixianc/probes/out -Dprobes=RustMMTk"
+  openjdk_common:
+    type: ModifierSet
+    val: "s|c2|probes|probes_cp"
+
+runtimes:
+  shape:
+    type: OpenJDK
+    release: 11
+    home: "/home/zixianc/mmtk/openjdk/build/linux-x86_64-normal-server-release/jdk"
+
+benchmarks:
+  dacapochopin-rc1:
+    - avrora
+    - batik
+    - biojava
+    - cassandra
+    - eclipse
+    - fop
+    - graphchi
+    - h2
+    - h2o
+    - jme
+    - jython
+    - kafka
+    - luindex
+    - lusearch
+    - pmd
+    - spring
+    - sunflow
+    - tomcat
+    - xalan
+    - zxing
+
+plugins:
+  shapes:
+    type: CopyFile
+    patterns:
+      - "shapes.binpb.zst"
+
+configs:
+  - "shape|openjdk_common|mmtk_gc-Immix|tph"
