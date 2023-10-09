@@ -273,6 +273,9 @@ impl<VM: VMBinding> ProcessEdgesWork for SanityGCProcessEdges<VM> {
                             s.push(e.as_address().as_usize() as i64 - object.value() as i64);
                         },
                     );
+                    // if s.len() > 512 {
+                    //     <VM as VMBinding>::VMObjectModel::dump_object(object);
+                    // }
                     sanity_checker
                         .iter
                         .epochs

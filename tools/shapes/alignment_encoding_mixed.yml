@@ -1,0 +1,89 @@
+includes:
+  - "$RUNNING_NG_PACKAGE_DATA/base/runbms-anu.yml"
+
+overrides:
+  "invocations": 10
+  "modifiers.c2.excludes.dacapo-evaluation-git-04132797":
+    - tradebeans
+    - tradesoap
+
+suites:
+  dacapo-evaluation-git-04132797:
+    type: DaCapo
+    release: evaluation
+    path: /usr/share/benchmarks/dacapo/dacapo-evaluation-git-04132797.jar
+    minheap: mmtk-openjdk-11-MarkCompact
+    minheap_values:
+      mmtk-openjdk-11-MarkCompact:
+        avrora: 8
+        batik: 426
+        biojava: 197
+        cassandra: 117
+        eclipse: 439
+        fop: 24
+        graphchi: 187
+        h2: 1122
+        h2o: 893
+        jme: 236
+        jython: 48
+        kafka: 233
+        luindex: 25
+        lusearch: 36
+        pmd: 291
+        spring: 110
+        sunflow: 37
+        tradebeans: .inf
+        tradesoap: .inf
+        tomcat: 55
+        xalan: 22
+        zxing: 427
+    timing_iteration: 5
+    timeout: 1200
+    callback: "probe.DacapoChopinCallback"
+
+modifiers:
+  probes_cp:
+    type: JVMClasspath
+    val: "/home/zixianc/probes/out/probes.jar"
+  probes:
+    type: JVMArg
+    val: "-Djava.library.path=/home/zixianc/probes/out -Dprobes=RustMMTk"
+  openjdk_common:
+    type: ModifierSet
+    val: "s|c2|probes|probes_cp"
+  pebasic:
+    type: EnvVar
+    var: "MMTK_PHASE_PERF_EVENTS"
+    val: "PERF_COUNT_HW_CPU_CYCLES,0,-1;PERF_COUNT_HW_INSTRUCTIONS,0,-1;PERF_COUNT_HW_CACHE_LL:MISS,0,-1;PERF_COUNT_HW_BRANCH_MISSES,0,-1"
+
+runtimes:
+  ae_biojava_fop_sunflow:
+    type: OpenJDK
+    release: 11
+    home: "/home/zixianc/shape/ae-biojava-fop-sunflow-pgo"
+
+benchmarks:
+  dacapo-evaluation-git-04132797:
+    - sunflow
+    - fop
+    - biojava
+    - avrora
+    - batik
+    - cassandra
+    - eclipse
+    - graphchi
+    - h2
+    - h2o
+    - jme
+    - jython
+    - kafka
+    - luindex
+    - lusearch
+    - pmd
+    - spring
+    - tomcat
+    - xalan
+    - zxing
+
+configs:
+  - "ae_biojava_fop_sunflow|openjdk_common|mmtk_gc-Immix|tph|pebasic"

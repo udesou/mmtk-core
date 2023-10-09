@@ -15,6 +15,7 @@ use crate::util::sanity::sanity_checker::SanityChecker;
 use crate::vm::ReferenceGlue;
 use crate::vm::VMBinding;
 use std::default::Default;
+#[cfg(feature = "sanity")]
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
