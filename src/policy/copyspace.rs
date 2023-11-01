@@ -1,12 +1,14 @@
 use crate::plan::{ObjectQueue, VectorObjectQueue};
 use crate::policy::copy_context::PolicyCopyContext;
+use crate::policy::gc_work::TRACE_KIND_TRANSITIVE_PIN;
 use crate::policy::sft::GCWorkerMutRef;
 use crate::policy::sft::SFT;
 use crate::policy::space::{CommonSpace, Space};
 use crate::scheduler::GCWorker;
+use crate::util::alloc::allocator::AllocatorContext;
 use crate::util::copy::*;
 #[cfg(feature = "vo_bit")]
-use crate::util::heap::layout::vm_layout_constants::BYTES_IN_CHUNK;
+use crate::util::heap::layout::vm_layout::BYTES_IN_CHUNK;
 use crate::util::heap::{MonotonePageResource, PageResource};
 use crate::util::metadata::{extract_side_metadata, MetadataSpec};
 use crate::util::object_forwarding;
@@ -14,6 +16,7 @@ use crate::util::{Address, ObjectReference};
 use crate::vm::*;
 use libc::{mprotect, PROT_EXEC, PROT_NONE, PROT_READ, PROT_WRITE};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 /// This type implements a simple copying space.
 pub struct CopySpace<VM: VMBinding> {
@@ -105,8 +108,8 @@ impl<VM: VMBinding> Space<VM> for CopySpace<VM> {
         &self.common
     }
 
-    fn initialize_sft(&self) {
-        self.common().initialize_sft(self.as_sft())
+    fn initialize_sft(&self, sft_map: &mut dyn crate::policy::sft_map::SFTMap) {
+        self.common().initialize_sft(self.as_sft(), sft_map)
     }
 
     fn release_multiple_pages(&mut self, _start: Address) {
@@ -126,6 +129,10 @@ impl<VM: VMBinding> crate::policy::gc_work::PolicyTraceObject<VM> for CopySpace<
         copy: Option<CopySemantics>,
         worker: &mut GCWorker<VM>,
     ) -> ObjectReference {
+        debug_assert!(
+            KIND != TRACE_KIND_TRANSITIVE_PIN,
+            "Copyspace does not support transitive pin trace."
+        );
         self.trace_object(queue, object, copy, worker)
     }
 
@@ -192,7 +199,9 @@ impl<VM: VMBinding> CopySpace<VM> {
                 );
             }
         } else {
-            unimplemented!();
+            for (start, size) in self.pr.iterate_allocated_regions() {
+                crate::util::metadata::vo_bit::bzero_vo_bit(start, size);
+            }
         }
     }
 
@@ -288,7 +297,6 @@ impl<VM: VMBinding> CopySpace<VM> {
     }
 }
 
-use crate::plan::Plan;
 use crate::util::alloc::Allocator;
 use crate::util::alloc::BumpAllocator;
 use crate::util::opaque_pointer::VMWorkerThread;
@@ -317,13 +325,13 @@ impl<VM: VMBinding> PolicyCopyContext for CopySpaceCopyContext<VM> {
 }
 
 impl<VM: VMBinding> CopySpaceCopyContext<VM> {
-    pub fn new(
+    pub(crate) fn new(
         tls: VMWorkerThread,
-        plan: &'static dyn Plan<VM = VM>,
+        context: Arc<AllocatorContext<VM>>,
         tospace: &'static CopySpace<VM>,
     ) -> Self {
         CopySpaceCopyContext {
-            copy_allocator: BumpAllocator::new(tls.0, tospace, plan),
+            copy_allocator: BumpAllocator::new(tls.0, tospace, context),
         }
     }
 }

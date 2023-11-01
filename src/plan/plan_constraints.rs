@@ -8,6 +8,8 @@ use crate::util::constants::*;
 /// and use the constant wherever possible. However, for plan-neutral implementations,
 /// these constraints are not constant.
 pub struct PlanConstraints {
+    /// Does the plan collect garbage? Obviously most plans do, but NoGC does not collect.
+    pub collects_garbage: bool,
     pub moves_objects: bool,
     pub gc_header_bits: usize,
     pub gc_header_words: usize,
@@ -33,11 +35,16 @@ pub struct PlanConstraints {
     /// Some policies do object forwarding after the first liveness transitive closure, such as mark compact.
     /// For plans that use those policies, they should set this as true.
     pub needs_forward_after_liveness: bool,
+    /// Some (in fact, most) plans do nothing when preparing mutators before tracing (i.e. in
+    /// `MutatorConfig::prepare_func`).  Those plans can set this to `false` so that the
+    /// `PrepareMutator` work packets will not be created at all.
+    pub needs_prepare_mutator: bool,
 }
 
 impl PlanConstraints {
     pub const fn default() -> Self {
         PlanConstraints {
+            collects_garbage: true,
             moves_objects: false,
             gc_header_bits: 0,
             gc_header_words: 0,
@@ -51,6 +58,7 @@ impl PlanConstraints {
             needs_forward_after_liveness: false,
             needs_log_bit: false,
             barrier: BarrierSelector::NoBarrier,
+            needs_prepare_mutator: true,
         }
     }
 }

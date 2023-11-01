@@ -278,7 +278,7 @@ impl Address {
     }
 
     /// is this address aligned to the given alignment
-    pub fn is_aligned_to(self, align: usize) -> bool {
+    pub const fn is_aligned_to(self, align: usize) -> bool {
         use crate::util::conversions;
         conversions::raw_is_aligned(self.0, align)
     }
@@ -299,6 +299,14 @@ impl Address {
     /// The caller must guarantee the address actually points to a Rust object.
     pub unsafe fn as_ref<'a, T>(self) -> &'a T {
         &*self.to_mut_ptr()
+    }
+
+    /// converts the Address to a mutable Rust reference
+    ///
+    /// # Safety
+    /// The caller must guarantee the address actually points to a Rust object.
+    pub unsafe fn as_mut_ref<'a, T>(self) -> &'a mut T {
+        &mut *self.to_mut_ptr()
     }
 
     /// converts the Address to a pointer-sized integer

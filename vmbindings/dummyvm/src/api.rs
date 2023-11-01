@@ -7,6 +7,7 @@ use crate::SINGLETON;
 use libc::c_char;
 use mmtk::memory_manager;
 use mmtk::scheduler::{GCController, GCWorker};
+use mmtk::util::heap::vm_layout::VMLayout;
 use mmtk::util::opaque_pointer::*;
 use mmtk::util::{Address, ObjectReference};
 use mmtk::AllocationSemantics;
@@ -15,10 +16,18 @@ use std::ffi::CStr;
 use std::sync::atomic::Ordering;
 
 #[no_mangle]
-pub extern "C" fn mmtk_init(heap_size: usize) {
+pub fn mmtk_init(heap_size: usize) {
+    mmtk_init_with_layout(heap_size, None)
+}
+
+#[no_mangle]
+pub fn mmtk_init_with_layout(heap_size: usize, layout: Option<VMLayout>) {
     // set heap size first
     {
         let mut builder = BUILDER.lock().unwrap();
+        if let Some(layout) = layout {
+            builder.set_vm_layout(layout);
+        }
         let success =
             builder
                 .options
@@ -155,11 +164,6 @@ pub extern "C" fn mmtk_is_mapped_address(address: Address) -> bool {
 }
 
 #[no_mangle]
-pub extern "C" fn mmtk_modify_check(object: ObjectReference) {
-    memory_manager::modify_check(&SINGLETON, object)
-}
-
-#[no_mangle]
 pub extern "C" fn mmtk_handle_user_collection_request(tls: VMMutatorThread) {
     memory_manager::handle_user_collection_request::<DummyVM>(&SINGLETON, tls);
 }
@@ -253,4 +257,10 @@ pub extern "C" fn mmtk_free_with_size(addr: Address, old_size: usize) {
 #[no_mangle]
 pub extern "C" fn mmtk_free(addr: Address) {
     memory_manager::free(addr)
+}
+
+#[no_mangle]
+#[cfg(feature = "malloc_counted_size")]
+pub extern "C" fn mmtk_get_malloc_bytes() -> usize {
+    memory_manager::get_malloc_bytes(&SINGLETON)
 }

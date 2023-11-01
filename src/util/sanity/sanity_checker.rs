@@ -72,7 +72,7 @@ impl<P: Plan> ScheduleSanityGC<P> {
 impl<P: Plan> GCWork<P::VM> for ScheduleSanityGC<P> {
     fn do_work(&mut self, worker: &mut GCWorker<P::VM>, mmtk: &'static MMTK<P::VM>) {
         let scheduler = worker.scheduler();
-        let plan = &mmtk.plan;
+        let plan = mmtk.get_plan();
 
         scheduler.reset_state();
 
@@ -80,8 +80,7 @@ impl<P: Plan> GCWork<P::VM> for ScheduleSanityGC<P> {
         #[cfg(feature = "extreme_assertions")]
         mmtk.edge_logger.reset();
 
-        plan.base().inside_sanity.store(true, Ordering::SeqCst);
-        // Stop & scan mutators (mutator scanning can happen before STW)
+        mmtk.sanity_begin(); // Stop & scan mutators (mutator scanning can happen before STW)
 
         // We use the cached roots for sanity gc, based on the assumption that
         // the stack scanning triggered by the selected plan is correct and precise.
@@ -98,14 +97,22 @@ impl<P: Plan> GCWork<P::VM> for ScheduleSanityGC<P> {
             let sanity_checker = mmtk.sanity_checker.lock().unwrap();
             for roots in &sanity_checker.root_edges {
                 scheduler.work_buckets[WorkBucketStage::Closure].add(
-                    SanityGCProcessEdges::<P::VM>::new(roots.clone(), true, mmtk),
+                    SanityGCProcessEdges::<P::VM>::new(
+                        roots.clone(),
+                        true,
+                        mmtk,
+                        WorkBucketStage::Closure,
+                    ),
                 );
             }
             for roots in &sanity_checker.root_nodes {
                 scheduler.work_buckets[WorkBucketStage::Closure].add(ScanObjects::<
                     SanityGCProcessEdges<P::VM>,
                 >::new(
-                    roots.clone(), false, true
+                    roots.clone(),
+                    false,
+                    true,
+                    WorkBucketStage::Closure,
                 ));
             }
         }
@@ -131,7 +138,6 @@ impl<P: Plan> SanityPrepare<P> {
 impl<P: Plan> GCWork<P::VM> for SanityPrepare<P> {
     fn do_work(&mut self, _worker: &mut GCWorker<P::VM>, mmtk: &'static MMTK<P::VM>) {
         info!("Sanity GC prepare");
-        mmtk.plan.enter_sanity();
         {
             let mut sanity_checker = mmtk.sanity_checker.lock().unwrap();
             sanity_checker.refs.clear();
@@ -166,7 +172,6 @@ impl<P: Plan> SanityRelease<P> {
 impl<P: Plan> GCWork<P::VM> for SanityRelease<P> {
     fn do_work(&mut self, _worker: &mut GCWorker<P::VM>, mmtk: &'static MMTK<P::VM>) {
         info!("Sanity GC release");
-        mmtk.plan.leave_sanity();
         {
             let mut sanity_checker = mmtk.sanity_checker.lock().unwrap();
             sanity_checker.clear_roots_cache();
@@ -179,6 +184,7 @@ impl<P: Plan> GCWork<P::VM> for SanityRelease<P> {
             let result = w.designated_work.push(Box::new(ReleaseCollector));
             debug_assert!(result.is_ok());
         }
+        mmtk.sanity_end();
     }
 }
 
@@ -205,9 +211,15 @@ impl<VM: VMBinding> ProcessEdgesWork for SanityGCProcessEdges<VM> {
     type ScanObjectsWorkType = ScanObjects<Self>;
 
     const OVERWRITE_REFERENCE: bool = false;
-    fn new(edges: Vec<EdgeOf<Self>>, roots: bool, mmtk: &'static MMTK<VM>) -> Self {
+    fn new(
+        edges: Vec<EdgeOf<Self>>,
+        roots: bool,
+        mmtk: &'static MMTK<VM>,
+        bucket: WorkBucketStage,
+    ) -> Self {
         Self {
-            base: ProcessEdgesBase::new(edges, roots, mmtk), // ..Default::default()
+            base: ProcessEdgesBase::new(edges, roots, mmtk, bucket),
+            // ..Default::default()
         }
     }
 
@@ -222,7 +234,7 @@ impl<VM: VMBinding> ProcessEdgesWork for SanityGCProcessEdges<VM> {
 
             // Let plan check object
             assert!(
-                self.mmtk().plan.sanity_check_object(object),
+                self.mmtk().get_plan().sanity_check_object(object),
                 "Invalid reference {:?}",
                 object
             );
@@ -306,6 +318,6 @@ impl<VM: VMBinding> ProcessEdgesWork for SanityGCProcessEdges<VM> {
         nodes: Vec<ObjectReference>,
         roots: bool,
     ) -> Self::ScanObjectsWorkType {
-        ScanObjects::<Self>::new(nodes, false, roots)
+        ScanObjects::<Self>::new(nodes, false, roots, WorkBucketStage::Closure)
     }
 }
