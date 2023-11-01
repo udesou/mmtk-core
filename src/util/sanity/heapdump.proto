@@ -5,6 +5,7 @@ package mmtk.util.sanity;
 message HeapDump {
     repeated HeapObject objects = 1;
     repeated RootEdge roots = 2;
+    repeated Space spaces = 3;
 }
 
 message RootEdge {
@@ -23,4 +24,10 @@ message HeapObject {
     bool is_objarray = 4;
     uint64 objarray_length = 5;
     repeated NormalEdge edges = 6;
+}
+
+message Space {
+    string name = 1;
+    uint64 start = 2;
+    uint64 end = 3;
 }

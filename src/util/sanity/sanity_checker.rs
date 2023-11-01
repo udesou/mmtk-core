@@ -43,12 +43,14 @@ impl HeapDump {
     fn reset(&mut self) {
         self.objects.clear();
         self.roots.clear();
+        self.spaces.clear();
     }
 
     fn new() -> Self {
         HeapDump {
             objects: vec![],
             roots: vec![],
+            spaces: vec![],
         }
     }
 }
@@ -216,6 +218,18 @@ impl<P: Plan> GCWork<P::VM> for SanityRelease<P> {
             sanity_checker.clear_roots_cache();
             if mmtk.is_in_harness() {
                 let gc_count = mmtk.stats.gc_count.load(atomic::Ordering::Relaxed);
+                self.plan.for_each_space(&mut |s| {
+                    let common = s.common();
+                    assert!(
+                        common.contiguous,
+                        "Only support heapdump of contiguous spaces"
+                    );
+                    sanity_checker.heapdump.spaces.push(Space {
+                        name: common.name.to_owned(),
+                        start: common.start.as_usize() as u64,
+                        end: (common.start + common.extent).as_usize() as u64,
+                    })
+                });
                 sanity_checker
                     .heapdump
                     .dump_to_file(format!("heapdump.{}.binpb.zst", gc_count));
