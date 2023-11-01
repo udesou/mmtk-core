@@ -9,7 +9,6 @@ use crate::{scheduler::*, ObjectQueue};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::ops::{Deref, DerefMut};
-use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 
 #[allow(dead_code)]
@@ -141,7 +140,7 @@ impl<P: Plan> GCWork<P::VM> for SanityPrepare<P> {
         {
             let mut sanity_checker = mmtk.sanity_checker.lock().unwrap();
             sanity_checker.refs.clear();
-            if mmtk.inside_harness.load(Ordering::Relaxed) {
+            if mmtk.is_in_harness() {
                 sanity_checker
                     .iter
                     .epochs
@@ -251,7 +250,7 @@ impl<VM: VMBinding> ProcessEdgesWork for SanityGCProcessEdges<VM> {
             trace!("Sanity mark object {}", object);
             self.nodes.enqueue(object);
 
-            if self.mmtk().inside_harness.load(Ordering::Relaxed) {
+            if self.mmtk().is_in_harness() {
                 if <VM as VMBinding>::VMScanning::is_val_array(object) {
                     sanity_checker
                         .iter
