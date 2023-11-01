@@ -240,7 +240,12 @@ impl<VM: VMBinding> MMTK<VM> {
             let file = File::create("shapes.binpb.zst").unwrap();
             let mut writer = zstd::Encoder::new(file, 0).unwrap().auto_finish();
             let mut buf = Vec::new();
-            self.sanity_checker.lock().unwrap().iter.encode(&mut buf).unwrap();
+            self.sanity_checker
+                .lock()
+                .unwrap()
+                .iter
+                .encode(&mut buf)
+                .unwrap();
 
             writer.write_all(&buf).unwrap();
         }

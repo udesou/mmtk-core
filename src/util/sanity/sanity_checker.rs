@@ -6,9 +6,13 @@ use crate::vm::edge_shape::Edge;
 use crate::vm::*;
 use crate::MMTK;
 use crate::{scheduler::*, ObjectQueue};
+use prost::Message;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::fs::File;
+use std::io::Write;
 use std::ops::{Deref, DerefMut};
+use std::path::Path;
 use std::sync::Mutex;
 
 #[allow(dead_code)]
@@ -20,10 +24,33 @@ pub struct SanityChecker<ES: Edge> {
     /// Cached root nodes for sanity root scanning
     root_nodes: Vec<Vec<ObjectReference>>,
     pub(crate) iter: ShapesIteration,
+    heapdump: HeapDump,
 }
 
 lazy_static! {
     static ref SANITY_SLOTS: Mutex<HashMap<ObjectReference, Shape>> = Mutex::new(HashMap::new());
+}
+
+impl HeapDump {
+    fn dump_to_file(&self, path: impl AsRef<Path>) {
+        let file = File::create(path).unwrap();
+        let mut writer = zstd::Encoder::new(file, 0).unwrap().auto_finish();
+        let mut buf = Vec::new();
+        self.encode(&mut buf).unwrap();
+        writer.write_all(&buf).unwrap();
+    }
+
+    fn reset(&mut self) {
+        self.objects.clear();
+        self.roots.clear();
+    }
+
+    fn new() -> Self {
+        HeapDump {
+            objects: vec![],
+            roots: vec![],
+        }
+    }
 }
 
 impl<ES: Edge> Default for SanityChecker<ES> {
@@ -39,6 +66,7 @@ impl<ES: Edge> SanityChecker<ES> {
             root_edges: vec![],
             root_nodes: vec![],
             iter: ShapesIteration { epochs: vec![] },
+            heapdump: HeapDump::new(),
         }
     }
 
@@ -93,8 +121,9 @@ impl<P: Plan> GCWork<P::VM> for ScheduleSanityGC<P> {
         //         .add(ScanMutatorRoots::<SanityGCProcessEdges<P::VM>>(mutator));
         // }
         {
-            let sanity_checker = mmtk.sanity_checker.lock().unwrap();
-            for roots in &sanity_checker.root_edges {
+            let mut sanity_checker = mmtk.sanity_checker.lock().unwrap();
+            let root_edges = &sanity_checker.root_edges.clone();
+            for roots in root_edges {
                 scheduler.work_buckets[WorkBucketStage::Closure].add(
                     SanityGCProcessEdges::<P::VM>::new(
                         roots.clone(),
@@ -104,6 +133,14 @@ impl<P: Plan> GCWork<P::VM> for ScheduleSanityGC<P> {
                     ),
                 );
             }
+            for roots in root_edges {
+                for root in roots {
+                    sanity_checker.heapdump.roots.push(RootEdge {
+                        objref: root.load().value() as u64,
+                    });
+                }
+            }
+            assert!(&sanity_checker.root_nodes.is_empty());
             for roots in &sanity_checker.root_nodes {
                 scheduler.work_buckets[WorkBucketStage::Closure].add(ScanObjects::<
                     SanityGCProcessEdges<P::VM>,
@@ -137,6 +174,7 @@ impl<P: Plan> SanityPrepare<P> {
 impl<P: Plan> GCWork<P::VM> for SanityPrepare<P> {
     fn do_work(&mut self, _worker: &mut GCWorker<P::VM>, mmtk: &'static MMTK<P::VM>) {
         info!("Sanity GC prepare");
+        let plan_mut: &mut P = unsafe { &mut *(self.plan as *const _ as *mut _) };
         {
             let mut sanity_checker = mmtk.sanity_checker.lock().unwrap();
             sanity_checker.refs.clear();
@@ -147,9 +185,11 @@ impl<P: Plan> GCWork<P::VM> for SanityPrepare<P> {
                     .push(ShapesEpoch { shapes: vec![] });
             }
         }
-        for mutator in <P::VM as VMBinding>::VMActivePlan::mutators() {
-            mmtk.scheduler.work_buckets[WorkBucketStage::Prepare]
-                .add(PrepareMutator::<P::VM>::new(mutator));
+        if plan_mut.constraints().needs_prepare_mutator {
+            for mutator in <P::VM as VMBinding>::VMActivePlan::mutators() {
+                mmtk.scheduler.work_buckets[WorkBucketStage::Prepare]
+                    .add(PrepareMutator::<P::VM>::new(mutator));
+            }
         }
         for w in &mmtk.scheduler.worker_group.workers_shared {
             let result = w.designated_work.push(Box::new(PrepareCollector));
@@ -174,6 +214,13 @@ impl<P: Plan> GCWork<P::VM> for SanityRelease<P> {
         {
             let mut sanity_checker = mmtk.sanity_checker.lock().unwrap();
             sanity_checker.clear_roots_cache();
+            if mmtk.is_in_harness() {
+                let gc_count = mmtk.stats.gc_count.load(atomic::Ordering::Relaxed);
+                sanity_checker
+                    .heapdump
+                    .dump_to_file(format!("heapdump.{}.binpb.zst", gc_count));
+            }
+            sanity_checker.heapdump.reset();
         }
         for mutator in <P::VM as VMBinding>::VMActivePlan::mutators() {
             mmtk.scheduler.work_buckets[WorkBucketStage::Release]
@@ -251,6 +298,9 @@ impl<VM: VMBinding> ProcessEdgesWork for SanityGCProcessEdges<VM> {
             self.nodes.enqueue(object);
 
             if self.mmtk().is_in_harness() {
+                let mut edges: Vec<NormalEdge> = vec![];
+                let mut is_objarray = false;
+                let mut objarray_length: u64 = 0;
                 if <VM as VMBinding>::VMScanning::is_val_array(object) {
                     sanity_checker
                         .iter
@@ -275,6 +325,20 @@ impl<VM: VMBinding> ProcessEdgesWork for SanityGCProcessEdges<VM> {
                             object: object.value() as u64,
                             offsets: vec![],
                         });
+
+                    <VM as VMBinding>::VMScanning::scan_object(
+                        self.worker().tls,
+                        object,
+                        &mut |e: <VM as VMBinding>::VMEdge| {
+                            edges.push(NormalEdge {
+                                slot: e.as_address().as_usize() as u64,
+                                objref: e.load().value() as u64,
+                            });
+                        },
+                    );
+
+                    is_objarray = true;
+                    objarray_length = edges.len() as u64;
                 } else {
                     let mut s = vec![];
                     <VM as VMBinding>::VMScanning::scan_object(
@@ -298,7 +362,25 @@ impl<VM: VMBinding> ProcessEdgesWork for SanityGCProcessEdges<VM> {
                             object: object.value() as u64,
                             offsets: s,
                         });
+                    <VM as VMBinding>::VMScanning::scan_object(
+                        self.worker().tls,
+                        object,
+                        &mut |e: <VM as VMBinding>::VMEdge| {
+                            edges.push(NormalEdge {
+                                slot: e.as_address().as_usize() as u64,
+                                objref: e.load().value() as u64,
+                            });
+                        },
+                    );
                 }
+                sanity_checker.heapdump.objects.push(HeapObject {
+                    start: object.value() as u64,
+                    klass: <VM as VMBinding>::VMObjectModel::get_klass(object),
+                    size: <VM as VMBinding>::VMObjectModel::get_current_size(object) as u64,
+                    is_objarray: is_objarray,
+                    objarray_length: objarray_length,
+                    edges: edges,
+                })
             }
         }
 

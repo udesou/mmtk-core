@@ -472,6 +472,10 @@ pub trait ObjectModel<VM: VMBinding> {
     fn is_object_sane(_object: ObjectReference) -> bool {
         true
     }
+
+    fn get_klass(_object: ObjectReference) -> u64 {
+        0
+    }
 }
 
 pub mod specs {
