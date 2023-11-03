@@ -313,8 +313,9 @@ impl<VM: VMBinding> ProcessEdgesWork for SanityGCProcessEdges<VM> {
 
             if self.mmtk().is_in_harness() {
                 let mut edges: Vec<NormalEdge> = vec![];
-                let mut is_objarray = false;
-                let mut objarray_length: u64 = 0;
+                let mut objarray_length: Option<u64> = None;
+                let mut instance_mirror_start: Option<u64> = None;
+                let mut instance_mirror_count: Option<u64> = None;
                 if <VM as VMBinding>::VMScanning::is_val_array(object) {
                     sanity_checker
                         .iter
@@ -351,9 +352,12 @@ impl<VM: VMBinding> ProcessEdgesWork for SanityGCProcessEdges<VM> {
                         },
                     );
 
-                    is_objarray = true;
-                    objarray_length = edges.len() as u64;
+                    objarray_length = Some(edges.len() as u64);
                 } else {
+                    if let Some((mirror_start, mirror_count)) = <VM as VMBinding>::VMScanning::instance_mirror_info(object) {
+                        instance_mirror_start = Some(mirror_start);
+                        instance_mirror_count = Some(mirror_count);
+                    }
                     let mut s = vec![];
                     <VM as VMBinding>::VMScanning::scan_object(
                         self.worker().tls,
@@ -391,8 +395,9 @@ impl<VM: VMBinding> ProcessEdgesWork for SanityGCProcessEdges<VM> {
                     start: object.value() as u64,
                     klass: <VM as VMBinding>::VMObjectModel::get_klass(object),
                     size: <VM as VMBinding>::VMObjectModel::get_current_size(object) as u64,
-                    is_objarray: is_objarray,
-                    objarray_length: objarray_length,
+                    objarray_length,
+                    instance_mirror_start,
+                    instance_mirror_count,
                     edges: edges,
                 })
             }

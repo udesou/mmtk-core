@@ -3,7 +3,7 @@ extern crate lazy_static;
 
 use anyhow::Result;
 use prost::Message;
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use std::{collections::HashMap, fs::File, io::Read};
@@ -43,8 +43,17 @@ fn mmap_fixed(start: u64, size: usize, prot: libc::c_int, flags: libc::c_int) ->
 #[repr(C)]
 #[derive(Debug)]
 struct Tib {
-    is_objarray: bool,
+    ttype: TibType,
     oop_map_blocks: Vec<OopMapBlock>,
+    instance_mirror_info: Option<(u64, u64)>,
+}
+
+#[repr(u8)]
+#[derive(Debug)]
+enum TibType {
+    Ordinary = 0,
+    ObjArray = 1,
+    InstanceMirror = 2,
 }
 
 impl Tib {
@@ -56,32 +65,70 @@ impl Tib {
 
     fn objarray(klass: u64) -> Arc<Tib> {
         Self::insert_with_cache(klass, || Tib {
-            is_objarray: true,
+            ttype: TibType::ObjArray,
             oop_map_blocks: vec![],
+            instance_mirror_info: None,
         })
     }
 
-    fn non_objarray(klass: u64, obj: &HeapObject) -> Arc<Tib> {
-        Self::insert_with_cache(klass, || {
-            let mut oop_map_blocks: Vec<OopMapBlock> = vec![];
-            for e in &obj.edges {
-                if let Some(o) = oop_map_blocks.last_mut() {
-                    if e.slot == obj.start + o.offset + o.count * 8 {
-                        o.count += 1;
-                        continue;
-                    }
+    fn encode_oop_map_blocks(obj: &HeapObject) -> Vec<OopMapBlock> {
+        let mut oop_map_blocks: Vec<OopMapBlock> = vec![];
+        for e in &obj.edges {
+            if let Some(start) = obj.instance_mirror_start {
+                let count = obj.instance_mirror_count.unwrap();
+                if e.slot >= start && e.slot < start + count * 8 {
+                    // This is a static field and shouldn't be encoded in an
+                    // OopMapBlock
+                    // println!("{:?}", oop_map_blocks);
+                    continue;
                 }
-                oop_map_blocks.push(OopMapBlock {
-                    offset: e.slot - obj.start,
-                    count: 1,
-                });
             }
+            // This is a normal field
+            if let Some(o) = oop_map_blocks.last_mut() {
+                if e.slot == obj.start + o.offset + o.count * 8 {
+                    o.count += 1;
+                    // println!("{:?}", oop_map_blocks);
+                    continue;
+                }
+            }
+            oop_map_blocks.push(OopMapBlock {
+                offset: e.slot - obj.start,
+                count: 1,
+            });
+            // println!("{:?}", oop_map_blocks);
+        }
+        oop_map_blocks
+    }
 
-            Tib {
-                is_objarray: false,
-                oop_map_blocks,
-            }
-        })
+    fn non_objarray(klass: u64, obj: &HeapObject) -> Arc<Tib> {
+        let ombs = Self::encode_oop_map_blocks(obj);
+        // println!("{:?}", ombs);
+        let sum: u64 = ombs.iter().map(|omb| omb.count).sum();
+
+        // println!("ret: {:?} {:?}", ret,  Arc::as_ptr(&ret));
+        if let Some(start) = obj.instance_mirror_start {
+            let count = obj.instance_mirror_count.unwrap();
+            assert_eq!(sum + count, obj.edges.len() as u64);
+            Arc::new(Tib {
+                ttype: TibType::InstanceMirror,
+                oop_map_blocks: ombs,
+                instance_mirror_info: Some((start, count)),
+            })
+        } else {
+            Self::insert_with_cache(klass, || Tib {
+                ttype: TibType::Ordinary,
+                oop_map_blocks: ombs,
+                instance_mirror_info: None,
+            })
+        }
+    }
+
+    fn num_edges(&self) -> u64 {
+        let mut sum = self.oop_map_blocks.iter().map(|omb| omb.count).sum();
+        if let Some((_, count)) = self.instance_mirror_info {
+            sum += count;
+        }
+        sum
     }
 }
 
@@ -108,24 +155,56 @@ unsafe fn trace_object(o: u64) -> bool {
     }
 }
 
-unsafe fn scan_object(o: u64, mark_queue: &mut VecDeque<u64>) {
+unsafe fn scan_object(o: u64, mark_queue: &mut VecDeque<u64>, objects: &HashMap<u64, HeapObject>) {
     let tib_ptr = *((o as *mut u64).wrapping_add(1) as *const *const Tib);
     if tib_ptr.is_null() {
-        panic!("Object 0x{:x} has a null tib pointer", o as u64);
+        panic!("Object 0x{:x} has a null tib pointer", { o });
     }
     let tib: &Tib = &*tib_ptr;
-    // println!("Tib: {:?}", tib);
-    if tib.is_objarray {
-        let objarray_length = *((o as *mut u64).wrapping_add(2) as *const u64);
-        // println!("Objarray length: {}", objarray_length);
-        for i in 0..objarray_length {
-            let slot = (o as *mut u64).wrapping_add(3 + i as usize);
-            mark_queue.push_back(*slot);
+    // println!("Object: {}, Tib Ptr: {:?}, Tib: {:?}", o, tib_ptr, tib);
+    let mut num_edges = 0;
+    match tib.ttype {
+        TibType::ObjArray => {
+            let objarray_length = *((o as *mut u64).wrapping_add(2) as *const u64);
+            // println!("Objarray length: {}", objarray_length);
+            for i in 0..objarray_length {
+                let slot = (o as *mut u64).wrapping_add(3 + i as usize);
+                mark_queue.push_back(*slot);
+                num_edges += 1;
+            }
+        },
+        TibType::InstanceMirror => {
+            for omb in &tib.oop_map_blocks {
+                for i in 0..omb.count {
+                    let slot =
+                        (o as *mut u8).wrapping_add(omb.offset as usize + i as usize * 8) as *mut u64;
+                    mark_queue.push_back(*slot);
+                    num_edges += 1;
+                }
+            }
+            let (start, count) = &tib.instance_mirror_info.unwrap();
+            for i in 0..*count{
+                let slot = ((*start) as *mut u64).wrapping_add(i as usize);
+                mark_queue.push_back(*slot);
+                num_edges += 1;
+            }
+        }
+        TibType::Ordinary => {
+            for omb in &tib.oop_map_blocks {
+                for i in 0..omb.count {
+                    let slot =
+                        (o as *mut u8).wrapping_add(omb.offset as usize + i as usize * 8) as *mut u64;
+                    mark_queue.push_back(*slot);
+                    num_edges += 1;
+                }
+            }
         }
     }
+    // println!("{:?}", objects.get(&o).unwrap());
+    assert_eq!(num_edges, objects.get(&o).unwrap().edges.len())
 }
 
-unsafe fn transitive_closure(roots: &[RootEdge]) {
+unsafe fn transitive_closure(roots: &[RootEdge], objects: &HashMap<u64, HeapObject>) {
     let start = Instant::now();
     // A queue of objref (possibly null)
     // aka node enqueuing
@@ -139,7 +218,7 @@ unsafe fn transitive_closure(roots: &[RootEdge]) {
             // not previously marked, now marked
             // now scan
             marked_object += 1;
-            scan_object(o, &mut mark_queue);
+            scan_object(o, &mut mark_queue, objects);
         }
     }
     let elapsed = start.elapsed();
@@ -150,38 +229,79 @@ unsafe fn transitive_closure(roots: &[RootEdge]) {
     );
 }
 
+fn sanity_trace(roots: &[RootEdge], objects: &HashMap<u64, HeapObject>) -> usize {
+    let mut reachable_objects: HashSet<u64> = HashSet::new();
+    let mut mark_stack: Vec<u64> = vec![];
+    for root in roots {
+        debug_assert!(objects.contains_key(&root.objref));
+        mark_stack.push(root.objref);
+    }
+    // println!("Sanity mark stack {} objects", mark_stack.len());
+    while let Some(o) = mark_stack.pop() {
+        // println!("Sanity mark stack {} objects", mark_stack.len());
+        if reachable_objects.contains(&o) {
+            continue;
+        }
+        reachable_objects.insert(o);
+        let obj = objects.get(&o).unwrap();
+        for edge in &obj.edges {
+            if edge.objref != 0 {
+                mark_stack.push(edge.objref);
+                // println!("Sanity mark stack {} objects", mark_stack.len());
+            }
+        }
+    }
+    reachable_objects.len()
+}
+
 fn main() -> Result<()> {
     let file = File::open("heapdump.20.binpb.zst")?;
     let mut reader = zstd::Decoder::new(file)?;
     let mut buf = vec![];
     reader.read_to_end(&mut buf)?;
     let heapdump = HeapDump::decode(buf.as_slice())?;
-    for s in heapdump.spaces {
+    for s in &heapdump.spaces {
         println!("Mapping {} at 0x{:x}", s.name, s.start);
         dzmmap_noreplace(s.start, (s.end - s.start) as usize)?;
     }
+    let mut objects: HashMap<u64, HeapObject> = HashMap::new();
+    for object in &heapdump.objects {
+        objects.insert(object.start, object.clone());
+    }
     let start = Instant::now();
+    // for o in &heapdump.objects {
+    //     println!("{:?}", o);
+    // }
     for o in &heapdump.objects {
-        unsafe {
-            std::ptr::write::<u64>((o.start + 8) as *mut u64, o.start);
-        }
-        let tib = if o.is_objarray {
-            Arc::as_ptr(&Tib::objarray(o.klass))
+        // unsafe {
+        //     std::ptr::write::<u64>((o.start + 8) as *mut u64, o.start);
+        // }
+        let tib = if o.objarray_length.is_some() {
+            Tib::objarray(o.klass)
         } else {
-            Arc::as_ptr(&Tib::non_objarray(o.klass, o))
+            Tib::non_objarray(o.klass, o)
         };
-        // println!(
-        //     "Object: 0x{:x}, Klass: 0x{:x}, TIB: 0x{:x}",
-        //     o.start, o.klass, tib as u64
-        // );
-        unsafe {
-            std::ptr::write::<u64>((o.start + 8) as *mut u64, tib as u64);
+        if o.objarray_length.is_none() {
+            assert_eq!(tib.num_edges(), o.edges.len() as u64);
         }
-        if o.is_objarray {
+        // We need to leak this, so the underlying memory won't be collected
+        let tib_ptr = Arc::into_raw(tib);
+        // println!(
+        //     "Object: 0x{:x}, Klass: 0x{:x}, TIB: {:?}, TIB ptr: 0x{:x}",
+        //     o.start, o.klass, tib , tib_ptr as u64
+        // );
+        // Initialize the object
+        // Set tib
+        unsafe {
+            std::ptr::write::<u64>((o.start + 8) as *mut u64, tib_ptr as u64);
+        }
+        // Write out array length for obj array
+        if let Some(l) = o.objarray_length {
             unsafe {
-                std::ptr::write::<u64>((o.start + 16) as *mut u64, o.objarray_length);
+                std::ptr::write::<u64>((o.start + 16) as *mut u64, l);
             }
         }
+        // Write out each non-zero ref field
         for e in &o.edges {
             unsafe {
                 std::ptr::write::<u64>(e.slot as *mut u64, e.objref);
@@ -194,8 +314,18 @@ fn main() -> Result<()> {
         heapdump.objects.len(),
         elapsed.as_micros() as f64 / 1000f64
     );
+    println!(
+        "Sanity trace reporting {} reachable objects",
+        sanity_trace(&heapdump.roots, &objects)
+    );
     unsafe {
-        transitive_closure(&heapdump.roots);
+        transitive_closure(&heapdump.roots, &objects);
+    }
+    for o in &heapdump.objects {
+        let mark_word = o.start as *mut u64;
+        if unsafe { *mark_word } != 1 {
+            println!("{} not marked by transitive closure", o.start);
+        }
     }
     Ok(())
 }

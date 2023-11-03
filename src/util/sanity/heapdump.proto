@@ -21,9 +21,10 @@ message HeapObject {
     uint64 start = 1;
     uint64 klass = 2;
     uint64 size = 3;
-    bool is_objarray = 4;
-    uint64 objarray_length = 5;
-    repeated NormalEdge edges = 6;
+    optional uint64 objarray_length = 4;
+    optional uint64 instance_mirror_start = 5;
+    optional uint64 instance_mirror_count = 6;
+    repeated NormalEdge edges = 7;
 }
 
 message Space {
