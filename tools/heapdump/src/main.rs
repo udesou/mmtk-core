@@ -108,7 +108,7 @@ impl Tib {
         // println!("ret: {:?} {:?}", ret,  Arc::as_ptr(&ret));
         if let Some(start) = obj.instance_mirror_start {
             let count = obj.instance_mirror_count.unwrap();
-            assert_eq!(sum + count, obj.edges.len() as u64);
+            debug_assert_eq!(sum + count, obj.edges.len() as u64);
             Arc::new(Tib {
                 ttype: TibType::InstanceMirror,
                 oop_map_blocks: ombs,
@@ -201,11 +201,11 @@ unsafe fn scan_object(o: u64, mark_queue: &mut VecDeque<u64>, objects: &HashMap<
         }
     }
     // println!("{:?}", objects.get(&o).unwrap());
-    assert_eq!(num_edges, objects.get(&o).unwrap().edges.len())
+    debug_assert_eq!(num_edges, objects.get(&o).unwrap().edges.len())
 }
 
 unsafe fn transitive_closure(roots: &[RootEdge], objects: &HashMap<u64, HeapObject>) {
-    let start = Instant::now();
+    let start: Instant = Instant::now();
     // A queue of objref (possibly null)
     // aka node enqueuing
     let mut mark_queue: VecDeque<u64> = VecDeque::new();
@@ -282,7 +282,7 @@ fn main() -> Result<()> {
             Tib::non_objarray(o.klass, o)
         };
         if o.objarray_length.is_none() {
-            assert_eq!(tib.num_edges(), o.edges.len() as u64);
+            debug_assert_eq!(tib.num_edges(), o.edges.len() as u64);
         }
         // We need to leak this, so the underlying memory won't be collected
         let tib_ptr = Arc::into_raw(tib);
