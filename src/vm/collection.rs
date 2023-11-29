@@ -140,6 +140,8 @@ pub trait Collection<VM: VMBinding> {
         0
     }
 
+    /// FIXME: add proper docs
+    /// Check if the binding has disabled GC (heap may grow above the max heap size)
     fn is_collection_disabled() -> bool {
         false
     }
