@@ -121,13 +121,15 @@ pub fn bind_mutator<VM: VMBinding>(
     mutator
 }
 
-/// Report to MMTk that a mutator is no longer needed. A binding should not attempt
-/// to use the mutator after this call. MMTk will not attempt to reclaim the memory for the
-/// mutator, so a binding should properly reclaim the memory for the mutator after this call.
+/// Report to MMTk that a mutator is no longer needed. All mutator state is flushed before it is
+/// destroyed. A binding should not attempt to use the mutator after this call. MMTk will not
+/// attempt to reclaim the memory for the mutator, so a binding should properly reclaim the memory
+/// for the mutator after this call.
 ///
 /// Arguments:
 /// * `mutator`: A reference to the mutator to be destroyed.
 pub fn destroy_mutator<VM: VMBinding>(mutator: &mut Mutator<VM>) {
+    mutator.flush();
     mutator.on_destroy();
 }
 
@@ -220,7 +222,7 @@ pub fn post_alloc<VM: VMBinding>(
 /// For a correct barrier implementation, a VM binding needs to choose one of the following options:
 /// * Use subsuming barrier `object_reference_write`
 /// * Use both `object_reference_write_pre` and `object_reference_write_post`, or both, if the binding has difficulty delegating the store to mmtk-core with the subsuming barrier.
-/// * Implement fast-path on the VM side, and call the generic api `object_reference_slow` as barrier slow-path call.
+/// * Implement fast-path on the VM side, and call the generic api `object_reference_write_slow` as barrier slow-path call.
 /// * Implement fast-path on the VM side, and do a specialized slow-path call.
 ///
 /// Arguments:
@@ -244,7 +246,7 @@ pub fn object_reference_write<VM: VMBinding>(
 /// For a correct barrier implementation, a VM binding needs to choose one of the following options:
 /// * Use subsuming barrier `object_reference_write`
 /// * Use both `object_reference_write_pre` and `object_reference_write_post`, or both, if the binding has difficulty delegating the store to mmtk-core with the subsuming barrier.
-/// * Implement fast-path on the VM side, and call the generic api `object_reference_slow` as barrier slow-path call.
+/// * Implement fast-path on the VM side, and call the generic api `object_reference_write_slow` as barrier slow-path call.
 /// * Implement fast-path on the VM side, and do a specialized slow-path call.
 ///
 /// Arguments:
@@ -270,7 +272,7 @@ pub fn object_reference_write_pre<VM: VMBinding>(
 /// For a correct barrier implementation, a VM binding needs to choose one of the following options:
 /// * Use subsuming barrier `object_reference_write`
 /// * Use both `object_reference_write_pre` and `object_reference_write_post`, or both, if the binding has difficulty delegating the store to mmtk-core with the subsuming barrier.
-/// * Implement fast-path on the VM side, and call the generic api `object_reference_slow` as barrier slow-path call.
+/// * Implement fast-path on the VM side, and call the generic api `object_reference_write_slow` as barrier slow-path call.
 /// * Implement fast-path on the VM side, and do a specialized slow-path call.
 ///
 /// Arguments:
@@ -434,6 +436,7 @@ pub fn free_with_size<VM: VMBinding>(mmtk: &MMTK<VM>, addr: Address, old_size: u
     crate::util::malloc::free_with_size(mmtk, addr, old_size)
 }
 
+/// Get the current active malloc'd bytes. Here MMTk only accounts for bytes that are done through those 'counted malloc' functions.
 #[cfg(feature = "malloc_counted_size")]
 pub fn get_malloc_bytes<VM: VMBinding>(mmtk: &MMTK<VM>) -> usize {
     mmtk.state.malloc_bytes.load(Ordering::SeqCst)

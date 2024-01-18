@@ -19,12 +19,18 @@ pub type ThreadId = usize;
 
 thread_local! {
     /// Current worker's ordinal
-    static WORKER_ORDINAL: Atomic<Option<ThreadId>> = Atomic::new(None);
+    static WORKER_ORDINAL: Atomic<ThreadId> = Atomic::new(ThreadId::MAX);
 }
 
 /// Get current worker ordinal. Return `None` if the current thread is not a worker.
-pub fn current_worker_ordinal() -> Option<ThreadId> {
-    WORKER_ORDINAL.with(|x| x.load(Ordering::Relaxed))
+pub fn current_worker_ordinal() -> ThreadId {
+    let ordinal = WORKER_ORDINAL.with(|x| x.load(Ordering::Relaxed));
+    debug_assert_ne!(
+        ordinal,
+        ThreadId::MAX,
+        "Thread-local variable WORKER_ORDINAL not set yet."
+    );
+    ordinal
 }
 
 /// The part shared between a GCWorker and the scheduler.
@@ -327,20 +333,19 @@ impl<VM: VMBinding> GCWorker<VM> {
         self.local_work_buffer.push(Box::new(work));
     }
 
+    /// Is this worker a coordinator or a normal GC worker?
     pub fn is_coordinator(&self) -> bool {
         self.is_coordinator
     }
 
+    /// Get the scheduler. There is only one scheduler per MMTk instance.
     pub fn scheduler(&self) -> &GCWorkScheduler<VM> {
         &self.scheduler
     }
 
+    /// Get a mutable reference of the copy context for this worker.
     pub fn get_copy_context_mut(&mut self) -> &mut GCWorkerCopyContext<VM> {
         &mut self.copy
-    }
-
-    pub fn do_work(&'static mut self, mut work: impl GCWork<VM>) {
-        work.do_work(self, self.mmtk);
     }
 
     /// Poll a ready-to-execute work packet in the following order:
@@ -357,15 +362,11 @@ impl<VM: VMBinding> GCWorker<VM> {
             .unwrap_or_else(|| self.scheduler().poll(self))
     }
 
-    pub fn do_boxed_work(&'static mut self, mut work: Box<dyn GCWork<VM>>) {
-        work.do_work(self, self.mmtk);
-    }
-
     /// Entry of the worker thread. Resolve thread affinity, if it has been specified by the user.
     /// Each worker will keep polling and executing work packets in a loop.
     pub fn run(&mut self, tls: VMWorkerThread, mmtk: &'static MMTK<VM>) {
         probe!(mmtk, gcworker_run);
-        WORKER_ORDINAL.with(|x| x.store(Some(self.ordinal), Ordering::SeqCst));
+        WORKER_ORDINAL.with(|x| x.store(self.ordinal, Ordering::SeqCst));
         self.scheduler.resolve_affinity(self.ordinal);
         self.tls = tls;
         self.copy = crate::plan::create_gc_worker_context(tls, mmtk);
@@ -383,6 +384,13 @@ impl<VM: VMBinding> GCWorker<VM> {
             // probe! expands to an empty block on unsupported platforms
             #[allow(unused_variables)]
             let typename = work.get_type_name();
+
+            #[cfg(feature = "bpftrace_workaround")]
+            // Workaround a problem where bpftrace script cannot see the work packet names,
+            // by force loading from the packet name.
+            // See the "Known issues" section in `tools/tracing/timeline/README.md`
+            std::hint::black_box(unsafe { *(typename.as_ptr()) });
+
             probe!(mmtk, work, typename.as_ptr(), typename.len());
             work.do_work_with_stat(self, mmtk);
         }
