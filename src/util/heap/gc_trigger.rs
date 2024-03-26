@@ -43,7 +43,9 @@ impl<VM: VMBinding> GCTrigger<VM> {
                     conversions::bytes_to_pages_up(min),
                     conversions::bytes_to_pages_up(max),
                 )),
-                GCTriggerSelector::Delegated => unimplemented!(),
+                GCTriggerSelector::Delegated => {
+                    <VM::VMCollection as crate::vm::Collection<VM>>::create_gc_trigger()
+                }
             },
             options,
             gc_requester,
@@ -65,7 +67,10 @@ impl<VM: VMBinding> GCTrigger<VM> {
     /// * `space`: The space that triggered the poll. This could `None` if the poll is not triggered by a space.
     pub fn poll(&self, space_full: bool, space: Option<&dyn Space<VM>>) -> bool {
         let plan = unsafe { self.plan.assume_init() };
-        if self.policy.is_gc_required(space_full, space, plan) {
+        if self
+            .policy
+            .is_gc_required(space_full, space.map(|s| SpaceStats::new(s)), plan)
+        {
             info!(
                 "[POLL] {}{} ({}/{} pages)",
                 if let Some(space) = space {
@@ -101,6 +106,26 @@ impl<VM: VMBinding> GCTrigger<VM> {
     }
 }
 
+/// Provides statistics about the space. This is exposed to bindings, as it is used
+/// in both [`crate::plan::Plan`] and [`GCTriggerPolicy`].
+// This type exists so we do not need to expose the `Space` trait to the bindings.
+pub struct SpaceStats<'a, VM: VMBinding>(pub(crate) &'a dyn Space<VM>);
+
+impl<'a, VM: VMBinding> SpaceStats<'a, VM> {
+    /// Create new SpaceStats.
+    fn new(space: &'a dyn Space<VM>) -> Self {
+        Self(space)
+    }
+
+    /// Get the number of reserved pages for the space.
+    pub fn reserved_pages(&self) -> usize {
+        self.0.reserved_pages()
+    }
+
+    // We may expose more methods to bindings if they need more information for implementing GC triggers.
+    // But we should never expose `Space` itself.
+}
+
 /// This trait describes a GC trigger policy. A triggering policy have hooks to be informed about
 /// GC start/end so they can collect some statistics about GC and allocation. The policy needs to
 /// decide the (current) heap limit and decide whether a GC should be performed.
@@ -113,17 +138,25 @@ pub trait GCTriggerPolicy<VM: VMBinding>: Sync + Send {
     /// Inform the triggering policy that a GC starts.
     fn on_gc_start(&self, _mmtk: &'static MMTK<VM>) {}
     /// Inform the triggering policy that a GC is about to start the release work. This is called
-    /// in the global [`crate::scheduler::gc_work::Release`] work packet. This means we assume a plan
+    /// in the global Release work packet. This means we assume a plan
     /// do not schedule any work that reclaims memory before the global `Release` work. The current plans
     /// satisfy this assumption: they schedule other release work in `plan.release()`.
     fn on_gc_release(&self, _mmtk: &'static MMTK<VM>) {}
     /// Inform the triggering policy that a GC ends.
     fn on_gc_end(&self, _mmtk: &'static MMTK<VM>) {}
-    /// Is a GC required now?
+    /// Is a GC required now? The GC trigger may implement its own heuristics to decide when
+    /// a GC should be performed. However, we recommend the implementation to do its own checks
+    /// first, and always call `plan.collection_required(space_full, space)` at the end as a fallback to see if the plan needs
+    /// to do a GC.
+    ///
+    /// Arguments:
+    /// * `space_full`: Is any space full?
+    /// * `space`: The space that is full. The GC trigger may access some stats of the space.
+    /// * `plan`: The reference to the plan in use.
     fn is_gc_required(
         &self,
         space_full: bool,
-        space: Option<&dyn Space<VM>>,
+        space: Option<SpaceStats<VM>>,
         plan: &dyn Plan<VM = VM>,
     ) -> bool;
     /// Is current heap full?
@@ -144,7 +177,7 @@ impl<VM: VMBinding> GCTriggerPolicy<VM> for FixedHeapSizeTrigger {
     fn is_gc_required(
         &self,
         space_full: bool,
-        space: Option<&dyn Space<VM>>,
+        space: Option<SpaceStats<VM>>,
         plan: &dyn Plan<VM = VM>,
     ) -> bool {
         // Let the plan decide
@@ -208,7 +241,7 @@ struct MemBalancerStats {
     allocation_pages: f64,
     /// Allocation duration in secs
     allocation_time: f64,
-    /// Collected memory in pages
+    /// Collected memory in pages (memory traversed during collection)
     collection_pages: f64,
     /// Collection duration in secs
     collection_time: f64,
@@ -289,9 +322,8 @@ impl MemBalancerStats {
     ) -> bool {
         if !plan.is_current_gc_nursery() {
             self.gc_end_live_pages = plan.get_mature_reserved_pages();
-            self.collection_pages = self
-                .gc_release_live_pages
-                .saturating_sub(self.gc_end_live_pages) as f64;
+            // Use live pages as an estimate for pages traversed during GC
+            self.collection_pages = self.gc_end_live_pages as f64;
             trace!(
                 "collected pages = mature live at gc end {} - mature live at gc release {} = {}",
                 self.gc_release_live_pages,
@@ -327,9 +359,8 @@ impl MemBalancerStats {
     fn non_generational_mem_stats_on_gc_end<VM: VMBinding>(&mut self, mmtk: &'static MMTK<VM>) {
         self.gc_end_live_pages = mmtk.get_plan().get_reserved_pages();
         trace!("live pages = {}", self.gc_end_live_pages);
-        self.collection_pages = self
-            .gc_release_live_pages
-            .saturating_sub(self.gc_end_live_pages) as f64;
+        // Use live pages as an estimate for pages traversed during GC
+        self.collection_pages = self.gc_end_live_pages as f64;
         trace!(
             "collected pages = live at gc end {} - live at gc release {} = {}",
             self.gc_release_live_pages,
@@ -343,7 +374,7 @@ impl<VM: VMBinding> GCTriggerPolicy<VM> for MemBalancerTrigger {
     fn is_gc_required(
         &self,
         space_full: bool,
-        space: Option<&dyn Space<VM>>,
+        space: Option<SpaceStats<VM>>,
         plan: &dyn Plan<VM = VM>,
     ) -> bool {
         // Let the plan decide

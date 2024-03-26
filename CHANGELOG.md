@@ -1,3 +1,115 @@
+0.23.0 (2024-02-09)
+===
+
+## What's Changed
+
+### API
+* Ask from binding if GC is disabled by @udesou in https://github.com/mmtk/mmtk-core/pull/1075
+
+### CI
+* Stop using the deprecated set-output in our CI configs by @qinsoon in https://github.com/mmtk/mmtk-core/pull/1059
+* Rename CI tests to minimal/extended tests by @qinsoon in https://github.com/mmtk/mmtk-core/pull/1073
+* Properly get PR number for merge group by @qinsoon in https://github.com/mmtk/mmtk-core/pull/1077
+
+### Misc
+* MMTk Enhancement Proposal by @wks in https://github.com/mmtk/mmtk-core/pull/1056
+* Timeline visualization tool by @wks in https://github.com/mmtk/mmtk-core/pull/1022
+* Add a document for project principles by @qinsoon in https://github.com/mmtk/mmtk-core/pull/1069
+* Fix un-cleared VO bits for contiguous monotone PR by @wks in https://github.com/mmtk/mmtk-core/pull/1071
+* Use live memory to estimate collection pages in mem balancer by @qinsoon in https://github.com/mmtk/mmtk-core/pull/1050
+* Fix issues in sanity GC by @qinsoon in https://github.com/mmtk/mmtk-core/pull/1079
+
+**Full Changelog**: https://github.com/mmtk/mmtk-core/compare/v0.22.1...v0.23.0
+
+0.22.1 (2024-01-11)
+===
+
+## What's Changed
+
+* Revert a mistake in v0.22 that prevents cargo publish by @qinsoon in https://github.com/mmtk/mmtk-core/pull/1065
+
+**Full Changelog**: https://github.com/mmtk/mmtk-core/compare/v0.22.0...v0.22.1
+
+0.22.0 (2023-12-21)
+===
+
+## What's Changed
+
+### API
+
+* Flush mutator buffers in `destroy_mutator` by @k-sareen in https://github.com/mmtk/mmtk-core/pull/1045
+* NULL and movement check in process_edge by @wks in https://github.com/mmtk/mmtk-core/pull/1032
+
+### Documentation
+
+* Mention revoking TLABs of all mutators after a GC by @k-sareen in https://github.com/mmtk/mmtk-core/pull/1018
+* Add missing docs for the vm module by @qinsoon in https://github.com/mmtk/mmtk-core/pull/1021
+* Add missing docs for some util modules by @qinsoon in https://github.com/mmtk/mmtk-core/pull/1024
+* Add missing docs for the rest of the util module by @qinsoon in https://github.com/mmtk/mmtk-core/pull/1026
+* Add missing docs for the rest of the code base (merge after #1026) by @qinsoon in https://github.com/mmtk/mmtk-core/pull/1028
+* Update some stale comments by @k-sareen in https://github.com/mmtk/mmtk-core/pull/1036
+
+### CI
+
+* Use new running scripts in ci-perf-kit by @qinsoon in https://github.com/mmtk/mmtk-core/pull/1005
+* Upload perf build and log as artifacts (merge after #1005) by @qinsoon in https://github.com/mmtk/mmtk-core/pull/1011
+* Fix multiple issues in recent CI changes by @qinsoon in https://github.com/mmtk/mmtk-core/pull/1014
+* Fix CI for OpenJDK nogc config by @qinsoon in https://github.com/mmtk/mmtk-core/pull/1019
+* Use ci-perf-kit 0.7.4: ignore runs with unmatched key/value in the logs. by @qinsoon in https://github.com/mmtk/mmtk-core/pull/1025
+* Fix Ruby binding test repo checkout by @wks in https://github.com/mmtk/mmtk-core/pull/1048
+
+### Misc
+
+* Post-release dependency version bump for v0.21.0 by @wks in https://github.com/mmtk/mmtk-core/pull/1013
+* Introduce MockVM by @qinsoon in https://github.com/mmtk/mmtk-core/pull/1049
+
+**Full Changelog**: https://github.com/mmtk/mmtk-core/compare/v0.21.0...v0.22.0
+
+0.21.0 (2023-11-03)
+===
+
+## What's Changed
+
+### Plan
+
+* Move some states from BasePlan to GlobalState by @qinsoon in https://github.com/mmtk/mmtk-core/pull/949
+* Extract set_collection_kind and set_gc_status by @qinsoon in https://github.com/mmtk/mmtk-core/pull/957
+* Expose `is_emergency_collection` to VM bindings by @wks in https://github.com/mmtk/mmtk-core/pull/997
+
+### Policy
+
+* Clear all side forwarding bits by @wks in https://github.com/mmtk/mmtk-core/pull/974
+* Stop using the name "ForwardingWord" by @wks in https://github.com/mmtk/mmtk-core/pull/976
+* Implement get_gc_trigger() for LockFreeImmortalSpace by @qinsoon in https://github.com/mmtk/mmtk-core/pull/1003
+
+### API
+
+* Expose alloc_slow. Add a section in user guide about allocation optimization by @qinsoon in https://github.com/mmtk/mmtk-core/pull/967
+* Use BumpPointer::default() by @qinsoon in https://github.com/mmtk/mmtk-core/pull/993
+* Fix mention of `to_object_reference()` in comment by @k-sareen in https://github.com/mmtk/mmtk-core/pull/998
+
+### Documentation
+
+* Fix rustdoc warnings in Rust 1.73 by @qinsoon in https://github.com/mmtk/mmtk-core/pull/978
+* Add a section about debugging tips in user guide by @qinsoon in https://github.com/mmtk/mmtk-core/pull/987
+* Update doc comments by @wks in https://github.com/mmtk/mmtk-core/pull/1000
+* Add document for release by @qinsoon in https://github.com/mmtk/mmtk-core/pull/1007
+* Move constants and add comments for stress copying by @wks in https://github.com/mmtk/mmtk-core/pull/1008
+* Update bibtex of the tracing paper to include the DOI by @caizixian in https://github.com/mmtk/mmtk-core/pull/1009
+
+### CI
+
+* Fix performance baseline workflow by @qinsoon in https://github.com/mmtk/mmtk-core/pull/971
+* Allow auto merge binding PRs by @qinsoon in https://github.com/mmtk/mmtk-core/pull/988
+* Apply a delay before we enable auto merge on a PR by @qinsoon in https://github.com/mmtk/mmtk-core/pull/992
+* Use `cargo generate-lockfile` to update JikesRVM's Cargo.lock by @qinsoon in https://github.com/mmtk/mmtk-core/pull/996
+
+### Misc
+
+* Add option to exclude kernel events from perf results by @k-sareen in https://github.com/mmtk/mmtk-core/pull/995
+
+**Full Changelog**: https://github.com/mmtk/mmtk-core/compare/v0.20.0...v0.21.0
+
 0.20.0 (2023-09-29)
 ===
 

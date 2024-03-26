@@ -35,9 +35,8 @@ use std::sync::atomic::Ordering;
 /// 2. Set command line options for MMTKBuilder by [`crate::memory_manager::process`] or [`crate::memory_manager::process_bulk`].
 /// 3. Initialize MMTk by calling this function, `mmtk_init()`, and pass the builder earlier. This call will return an MMTK instance.
 ///    Usually a binding store the MMTK instance statically as a singleton. We plan to allow multiple instances, but this is not yet fully
-///    supported. Currently we assume a binding will only need one MMTk instance.
-/// 4. Enable garbage collection in MMTk by [`crate::memory_manager::enable_collection`]. A binding should only call this once its
-///    thread system is ready. MMTk will not trigger garbage collection before this call.
+///    supported. Currently we assume a binding will only need one MMTk instance. Note that GC is enabled by default and the binding should
+///    implement `VMCollection::is_collection_enabled()` if it requires that the GC should be disabled at a particular time.
 ///
 /// Note that this method will attempt to initialize a logger. If the VM would like to use its own logger, it should initialize the logger before calling this method.
 /// Note that, to allow MMTk to do GC properly, `initialize_collection()` needs to be called after this call when
@@ -121,13 +120,15 @@ pub fn bind_mutator<VM: VMBinding>(
     mutator
 }
 
-/// Report to MMTk that a mutator is no longer needed. A binding should not attempt
-/// to use the mutator after this call. MMTk will not attempt to reclaim the memory for the
-/// mutator, so a binding should properly reclaim the memory for the mutator after this call.
+/// Report to MMTk that a mutator is no longer needed. All mutator state is flushed before it is
+/// destroyed. A binding should not attempt to use the mutator after this call. MMTk will not
+/// attempt to reclaim the memory for the mutator, so a binding should properly reclaim the memory
+/// for the mutator after this call.
 ///
 /// Arguments:
 /// * `mutator`: A reference to the mutator to be destroyed.
 pub fn destroy_mutator<VM: VMBinding>(mutator: &mut Mutator<VM>) {
+    mutator.flush();
     mutator.on_destroy();
 }
 
@@ -220,7 +221,7 @@ pub fn post_alloc<VM: VMBinding>(
 /// For a correct barrier implementation, a VM binding needs to choose one of the following options:
 /// * Use subsuming barrier `object_reference_write`
 /// * Use both `object_reference_write_pre` and `object_reference_write_post`, or both, if the binding has difficulty delegating the store to mmtk-core with the subsuming barrier.
-/// * Implement fast-path on the VM side, and call the generic api `object_reference_slow` as barrier slow-path call.
+/// * Implement fast-path on the VM side, and call the generic api `object_reference_write_slow` as barrier slow-path call.
 /// * Implement fast-path on the VM side, and do a specialized slow-path call.
 ///
 /// Arguments:
@@ -244,7 +245,7 @@ pub fn object_reference_write<VM: VMBinding>(
 /// For a correct barrier implementation, a VM binding needs to choose one of the following options:
 /// * Use subsuming barrier `object_reference_write`
 /// * Use both `object_reference_write_pre` and `object_reference_write_post`, or both, if the binding has difficulty delegating the store to mmtk-core with the subsuming barrier.
-/// * Implement fast-path on the VM side, and call the generic api `object_reference_slow` as barrier slow-path call.
+/// * Implement fast-path on the VM side, and call the generic api `object_reference_write_slow` as barrier slow-path call.
 /// * Implement fast-path on the VM side, and do a specialized slow-path call.
 ///
 /// Arguments:
@@ -270,7 +271,7 @@ pub fn object_reference_write_pre<VM: VMBinding>(
 /// For a correct barrier implementation, a VM binding needs to choose one of the following options:
 /// * Use subsuming barrier `object_reference_write`
 /// * Use both `object_reference_write_pre` and `object_reference_write_post`, or both, if the binding has difficulty delegating the store to mmtk-core with the subsuming barrier.
-/// * Implement fast-path on the VM side, and call the generic api `object_reference_slow` as barrier slow-path call.
+/// * Implement fast-path on the VM side, and call the generic api `object_reference_write_slow` as barrier slow-path call.
 /// * Implement fast-path on the VM side, and do a specialized slow-path call.
 ///
 /// Arguments:
@@ -434,6 +435,7 @@ pub fn free_with_size<VM: VMBinding>(mmtk: &MMTK<VM>, addr: Address, old_size: u
     crate::util::malloc::free_with_size(mmtk, addr, old_size)
 }
 
+/// Get the current active malloc'd bytes. Here MMTk only accounts for bytes that are done through those 'counted malloc' functions.
 #[cfg(feature = "malloc_counted_size")]
 pub fn get_malloc_bytes<VM: VMBinding>(mmtk: &MMTK<VM>) -> usize {
     mmtk.state.malloc_bytes.load(Ordering::SeqCst)
@@ -451,7 +453,7 @@ pub fn gc_poll<VM: VMBinding>(mmtk: &MMTK<VM>, tls: VMMutatorThread) {
         "gc_poll() can only be called by a mutator thread."
     );
 
-    if mmtk.state.should_trigger_gc_when_heap_is_full() && mmtk.gc_trigger.poll(false, None) {
+    if VM::VMCollection::is_collection_enabled() && mmtk.gc_trigger.poll(false, None) {
         debug!("Collection required");
         assert!(mmtk.state.is_initialized(), "GC is not allowed here: collection is not initialized (did you call initialize_collection()?).");
         VM::VMCollection::block_for_gc(tls);
@@ -505,42 +507,6 @@ pub fn initialize_collection<VM: VMBinding>(mmtk: &'static MMTK<VM>, tls: VMThre
     mmtk.scheduler.spawn_gc_threads(mmtk, tls);
     mmtk.state.initialized.store(true, Ordering::SeqCst);
     probe!(mmtk, collection_initialized);
-}
-
-/// Allow MMTk to trigger garbage collection when heap is full. This should only be used in pair with disable_collection().
-/// See the comments on disable_collection(). If disable_collection() is not used, there is no need to call this function at all.
-/// Note this call is not thread safe, only one VM thread should call this.
-///
-/// Arguments:
-/// * `mmtk`: A reference to an MMTk instance.
-pub fn enable_collection<VM: VMBinding>(mmtk: &'static MMTK<VM>) {
-    debug_assert!(
-        !mmtk.state.should_trigger_gc_when_heap_is_full(),
-        "enable_collection() is called when GC is already enabled."
-    );
-    mmtk.state
-        .trigger_gc_when_heap_is_full
-        .store(true, Ordering::SeqCst);
-}
-
-/// Disallow MMTk to trigger garbage collection. When collection is disabled, you can still allocate through MMTk. But MMTk will
-/// not trigger a GC even if the heap is full. In such a case, the allocation will exceed the MMTk's heap size (the soft heap limit).
-/// However, there is no guarantee that the physical allocation will succeed, and if it succeeds, there is no guarantee that further allocation
-/// will keep succeeding. So if a VM disables collection, it needs to allocate with careful consideration to make sure that the physical memory
-/// allows the amount of allocation. We highly recommend not using this method. However, we support this to accomodate some VMs that require this
-/// behavior. This call does not disable explicit GCs (through handle_user_collection_request()).
-/// Note this call is not thread safe, only one VM thread should call this.
-///
-/// Arguments:
-/// * `mmtk`: A reference to an MMTk instance.
-pub fn disable_collection<VM: VMBinding>(mmtk: &'static MMTK<VM>) {
-    debug_assert!(
-        mmtk.state.should_trigger_gc_when_heap_is_full(),
-        "disable_collection() is called when GC is not enabled."
-    );
-    mmtk.state
-        .trigger_gc_when_heap_is_full
-        .store(false, Ordering::SeqCst);
 }
 
 /// Process MMTk run-time options. Returns true if the option is processed successfully.
@@ -735,7 +701,7 @@ pub fn is_mapped_address(address: Address) -> bool {
 /// * `mmtk`: A reference to an MMTk instance.
 /// * `reff`: The weak reference to add.
 pub fn add_weak_candidate<VM: VMBinding>(mmtk: &MMTK<VM>, reff: ObjectReference) {
-    mmtk.reference_processors.add_weak_candidate::<VM>(reff);
+    mmtk.reference_processors.add_weak_candidate(reff);
 }
 
 /// Add a reference to the list of soft references. A binding may
@@ -745,7 +711,7 @@ pub fn add_weak_candidate<VM: VMBinding>(mmtk: &MMTK<VM>, reff: ObjectReference)
 /// * `mmtk`: A reference to an MMTk instance.
 /// * `reff`: The soft reference to add.
 pub fn add_soft_candidate<VM: VMBinding>(mmtk: &MMTK<VM>, reff: ObjectReference) {
-    mmtk.reference_processors.add_soft_candidate::<VM>(reff);
+    mmtk.reference_processors.add_soft_candidate(reff);
 }
 
 /// Add a reference to the list of phantom references. A binding may
@@ -755,7 +721,7 @@ pub fn add_soft_candidate<VM: VMBinding>(mmtk: &MMTK<VM>, reff: ObjectReference)
 /// * `mmtk`: A reference to an MMTk instance.
 /// * `reff`: The phantom reference to add.
 pub fn add_phantom_candidate<VM: VMBinding>(mmtk: &MMTK<VM>, reff: ObjectReference) {
-    mmtk.reference_processors.add_phantom_candidate::<VM>(reff);
+    mmtk.reference_processors.add_phantom_candidate(reff);
 }
 
 /// Generic hook to allow benchmarks to be harnessed. We do a full heap

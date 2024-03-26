@@ -56,9 +56,7 @@ impl<VM: VMBinding> ProcessEdgesWork for MyGCProcessEdges<VM> {
     }
 
     fn trace_object(&mut self, object: ObjectReference) -> ObjectReference {
-        if object.is_null() {
-            return object;
-        }
+        debug_assert!(!object.is_null());
         let worker = self.worker();
         let queue = &mut self.base.nodes;
         if self.plan.tospace().in_space(object) {
@@ -80,8 +78,8 @@ impl<VM: VMBinding> ProcessEdgesWork for MyGCProcessEdges<VM> {
         }
     }
 
-    fn create_scan_work(&self, nodes: Vec<ObjectReference>, roots: bool) -> ScanObjects<Self> {
-        ScanObjects::<Self>::new(nodes, false, roots, self.bucket)
+    fn create_scan_work(&self, nodes: Vec<ObjectReference>) -> ScanObjects<Self> {
+        ScanObjects::<Self>::new(nodes, false, self.bucket)
     }
 }
 // ANCHOR_END: mygc_process_edges_impl

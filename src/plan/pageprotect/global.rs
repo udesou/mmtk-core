@@ -8,6 +8,7 @@ use crate::plan::PlanConstraints;
 use crate::policy::space::Space;
 use crate::scheduler::*;
 use crate::util::alloc::allocators::AllocatorSelector;
+use crate::util::heap::gc_trigger::SpaceStats;
 use crate::util::heap::VMRequest;
 use crate::util::metadata::side_metadata::SideMetadataContext;
 use crate::{plan::global::BasePlan, vm::VMBinding};
@@ -27,6 +28,7 @@ pub struct PageProtect<VM: VMBinding> {
     pub common: CommonPlan<VM>,
 }
 
+/// The plan constraints for the page protect plan.
 pub const CONSTRAINTS: PlanConstraints = PlanConstraints {
     moves_objects: false,
     needs_prepare_mutator: false,
@@ -56,7 +58,7 @@ impl<VM: VMBinding> Plan for PageProtect<VM> {
         self.space.release(true);
     }
 
-    fn collection_required(&self, space_full: bool, _space: Option<&dyn Space<Self::VM>>) -> bool {
+    fn collection_required(&self, space_full: bool, _space: Option<SpaceStats<Self::VM>>) -> bool {
         self.base().collection_required(self, space_full)
     }
 

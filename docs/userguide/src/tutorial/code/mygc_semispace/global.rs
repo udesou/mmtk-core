@@ -13,6 +13,7 @@ use crate::scheduler::*; // Modify
 use crate::util::alloc::allocators::AllocatorSelector;
 use crate::util::copy::*;
 use crate::util::heap::VMRequest;
+use crate::util::heap::gc_trigger::SpaceStats;
 use crate::util::metadata::side_metadata::SideMetadataContext;
 use crate::util::opaque_pointer::*;
 use crate::vm::VMBinding;
@@ -44,9 +45,6 @@ pub struct MyGC<VM: VMBinding> {
 // ANCHOR: constraints
 pub const MYGC_CONSTRAINTS: PlanConstraints = PlanConstraints {
     moves_objects: true,
-    gc_header_bits: 2,
-    gc_header_words: 0,
-    num_specialized_scans: 1,
     ..PlanConstraints::default()
 };
 // ANCHOR_END: constraints
@@ -81,7 +79,7 @@ impl<VM: VMBinding> Plan for MyGC<VM> {
     // ANCHOR_END: schedule_collection
 
     // ANCHOR: collection_required()
-    fn collection_required(&self, space_full: bool, _space: Option<&dyn Space<Self::VM>>) -> bool {
+    fn collection_required(&self, space_full: bool, _space: Option<SpaceStats<Self::VM>>) -> bool {
         self.base().collection_required(self, space_full)
     }
     // ANCHOR_END: collection_required()

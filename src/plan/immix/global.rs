@@ -13,6 +13,7 @@ use crate::policy::space::Space;
 use crate::scheduler::*;
 use crate::util::alloc::allocators::AllocatorSelector;
 use crate::util::copy::*;
+use crate::util::heap::gc_trigger::SpaceStats;
 use crate::util::heap::VMRequest;
 use crate::util::metadata::side_metadata::SideMetadataContext;
 use crate::vm::VMBinding;
@@ -35,19 +36,17 @@ pub struct Immix<VM: VMBinding> {
     last_gc_was_defrag: AtomicBool,
 }
 
+/// The plan constraints for the immix plan.
 pub const IMMIX_CONSTRAINTS: PlanConstraints = PlanConstraints {
     moves_objects: crate::policy::immix::DEFRAG,
-    gc_header_bits: 2,
-    gc_header_words: 0,
-    num_specialized_scans: 1,
-    /// Max immix object size is half of a block.
+    // Max immix object size is half of a block.
     max_non_los_default_alloc_bytes: crate::policy::immix::MAX_IMMIX_OBJECT_SIZE,
     needs_prepare_mutator: false,
     ..PlanConstraints::default()
 };
 
 impl<VM: VMBinding> Plan for Immix<VM> {
-    fn collection_required(&self, space_full: bool, _space: Option<&dyn Space<Self::VM>>) -> bool {
+    fn collection_required(&self, space_full: bool, _space: Option<SpaceStats<Self::VM>>) -> bool {
         self.base().collection_required(self, space_full)
     }
 

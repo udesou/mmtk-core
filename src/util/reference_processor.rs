@@ -38,19 +38,19 @@ impl ReferenceProcessors {
         }
     }
 
-    pub fn add_soft_candidate<VM: VMBinding>(&self, reff: ObjectReference) {
+    pub fn add_soft_candidate(&self, reff: ObjectReference) {
         trace!("Add soft candidate: {}", reff);
-        self.soft.add_candidate::<VM>(reff);
+        self.soft.add_candidate(reff);
     }
 
-    pub fn add_weak_candidate<VM: VMBinding>(&self, reff: ObjectReference) {
+    pub fn add_weak_candidate(&self, reff: ObjectReference) {
         trace!("Add weak candidate: {}", reff);
-        self.weak.add_candidate::<VM>(reff);
+        self.weak.add_candidate(reff);
     }
 
-    pub fn add_phantom_candidate<VM: VMBinding>(&self, reff: ObjectReference) {
+    pub fn add_phantom_candidate(&self, reff: ObjectReference) {
         trace!("Add phantom candidate: {}", reff);
-        self.phantom.add_candidate::<VM>(reff);
+        self.phantom.add_candidate(reff);
     }
 
     /// This will invoke enqueue for each reference processor, which will
@@ -191,7 +191,7 @@ impl ReferenceProcessor {
     }
 
     /// Add a candidate.
-    pub fn add_candidate<VM: VMBinding>(&self, reff: ObjectReference) {
+    pub fn add_candidate(&self, reff: ObjectReference) {
         if !self.allow_new_candidate.load(Ordering::SeqCst) {
             return;
         }
@@ -216,6 +216,7 @@ impl ReferenceProcessor {
         e: &mut E,
         referent: ObjectReference,
     ) -> ObjectReference {
+        debug_assert!(!referent.is_null());
         e.trace_object(referent)
     }
 
@@ -223,6 +224,7 @@ impl ReferenceProcessor {
         e: &mut E,
         object: ObjectReference,
     ) -> ObjectReference {
+        debug_assert!(!object.is_null());
         e.trace_object(object)
     }
 
@@ -230,6 +232,7 @@ impl ReferenceProcessor {
         e: &mut E,
         referent: ObjectReference,
     ) -> ObjectReference {
+        debug_assert!(!referent.is_null());
         e.trace_object(referent)
     }
 
@@ -285,9 +288,6 @@ impl ReferenceProcessor {
             reference: ObjectReference,
         ) -> ObjectReference {
             let old_referent = <E::VM as VMBinding>::VMReferenceGlue::get_referent(reference);
-            let new_referent = ReferenceProcessor::get_forwarded_referent(trace, old_referent);
-            <E::VM as VMBinding>::VMReferenceGlue::set_referent(reference, new_referent);
-            let new_reference = ReferenceProcessor::get_forwarded_reference(trace, reference);
             {
                 use crate::vm::ObjectModel;
                 trace!(
@@ -295,13 +295,22 @@ impl ReferenceProcessor {
                     reference,
                     <E::VM as VMBinding>::VMObjectModel::get_current_size(reference)
                 );
+            }
+
+            if !<E::VM as VMBinding>::VMReferenceGlue::is_referent_cleared(old_referent) {
+                let new_referent = ReferenceProcessor::get_forwarded_referent(trace, old_referent);
+                <E::VM as VMBinding>::VMReferenceGlue::set_referent(reference, new_referent);
+
                 trace!(
                     " referent: {} (forwarded to {})",
                     old_referent,
                     new_referent
                 );
-                trace!(" reference: forwarded to {}", new_reference);
             }
+
+            let new_reference = ReferenceProcessor::get_forwarded_reference(trace, reference);
+            trace!(" reference: forwarded to {}", new_reference);
+
             debug_assert!(
                 !new_reference.is_null(),
                 "reference {:?}'s forwarding pointer is NULL",
@@ -480,7 +489,7 @@ use crate::MMTK;
 use std::marker::PhantomData;
 
 #[derive(Default)]
-pub struct SoftRefProcessing<E: ProcessEdgesWork>(PhantomData<E>);
+pub(crate) struct SoftRefProcessing<E: ProcessEdgesWork>(PhantomData<E>);
 impl<E: ProcessEdgesWork> GCWork<E::VM> for SoftRefProcessing<E> {
     fn do_work(&mut self, worker: &mut GCWorker<E::VM>, mmtk: &'static MMTK<E::VM>) {
         let mut w = E::new(vec![], false, mmtk, WorkBucketStage::SoftRefClosure);
@@ -496,7 +505,7 @@ impl<E: ProcessEdgesWork> SoftRefProcessing<E> {
 }
 
 #[derive(Default)]
-pub struct WeakRefProcessing<E: ProcessEdgesWork>(PhantomData<E>);
+pub(crate) struct WeakRefProcessing<E: ProcessEdgesWork>(PhantomData<E>);
 impl<E: ProcessEdgesWork> GCWork<E::VM> for WeakRefProcessing<E> {
     fn do_work(&mut self, worker: &mut GCWorker<E::VM>, mmtk: &'static MMTK<E::VM>) {
         let mut w = E::new(vec![], false, mmtk, WorkBucketStage::WeakRefClosure);
@@ -512,7 +521,7 @@ impl<E: ProcessEdgesWork> WeakRefProcessing<E> {
 }
 
 #[derive(Default)]
-pub struct PhantomRefProcessing<E: ProcessEdgesWork>(PhantomData<E>);
+pub(crate) struct PhantomRefProcessing<E: ProcessEdgesWork>(PhantomData<E>);
 impl<E: ProcessEdgesWork> GCWork<E::VM> for PhantomRefProcessing<E> {
     fn do_work(&mut self, worker: &mut GCWorker<E::VM>, mmtk: &'static MMTK<E::VM>) {
         let mut w = E::new(vec![], false, mmtk, WorkBucketStage::PhantomRefClosure);
@@ -528,7 +537,7 @@ impl<E: ProcessEdgesWork> PhantomRefProcessing<E> {
 }
 
 #[derive(Default)]
-pub struct RefForwarding<E: ProcessEdgesWork>(PhantomData<E>);
+pub(crate) struct RefForwarding<E: ProcessEdgesWork>(PhantomData<E>);
 impl<E: ProcessEdgesWork> GCWork<E::VM> for RefForwarding<E> {
     fn do_work(&mut self, worker: &mut GCWorker<E::VM>, mmtk: &'static MMTK<E::VM>) {
         let mut w = E::new(vec![], false, mmtk, WorkBucketStage::RefForwarding);
@@ -544,7 +553,7 @@ impl<E: ProcessEdgesWork> RefForwarding<E> {
 }
 
 #[derive(Default)]
-pub struct RefEnqueue<VM: VMBinding>(PhantomData<VM>);
+pub(crate) struct RefEnqueue<VM: VMBinding>(PhantomData<VM>);
 impl<VM: VMBinding> GCWork<VM> for RefEnqueue<VM> {
     fn do_work(&mut self, worker: &mut GCWorker<VM>, mmtk: &'static MMTK<VM>) {
         mmtk.reference_processors.enqueue_refs::<VM>(worker.tls);

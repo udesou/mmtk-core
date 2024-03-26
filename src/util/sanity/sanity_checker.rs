@@ -144,12 +144,12 @@ impl<P: Plan> GCWork<P::VM> for ScheduleSanityGC<P> {
             }
             assert!(&sanity_checker.root_nodes.is_empty());
             for roots in &sanity_checker.root_nodes {
-                scheduler.work_buckets[WorkBucketStage::Closure].add(ScanObjects::<
+                scheduler.work_buckets[WorkBucketStage::Closure].add(ProcessRootNode::<
+                    P::VM,
+                    SanityGCProcessEdges<P::VM>,
                     SanityGCProcessEdges<P::VM>,
                 >::new(
                     roots.clone(),
-                    false,
-                    true,
                     WorkBucketStage::Closure,
                 ));
             }
@@ -413,11 +413,7 @@ impl<VM: VMBinding> ProcessEdgesWork for SanityGCProcessEdges<VM> {
         object
     }
 
-    fn create_scan_work(
-        &self,
-        nodes: Vec<ObjectReference>,
-        roots: bool,
-    ) -> Self::ScanObjectsWorkType {
-        ScanObjects::<Self>::new(nodes, false, roots, WorkBucketStage::Closure)
+    fn create_scan_work(&self, nodes: Vec<ObjectReference>) -> Self::ScanObjectsWorkType {
+        ScanObjects::<Self>::new(nodes, false, WorkBucketStage::Closure)
     }
 }

@@ -17,6 +17,7 @@ use crate::scheduler::GCWorkScheduler;
 use crate::scheduler::GCWorker;
 use crate::util::alloc::allocators::AllocatorSelector;
 use crate::util::copy::*;
+use crate::util::heap::gc_trigger::SpaceStats;
 use crate::util::heap::VMRequest;
 use crate::util::Address;
 use crate::util::ObjectReference;
@@ -50,6 +51,7 @@ pub struct GenImmix<VM: VMBinding> {
     pub last_gc_was_full_heap: AtomicBool,
 }
 
+/// The plan constraints for the generational immix plan.
 pub const GENIMMIX_CONSTRAINTS: PlanConstraints = PlanConstraints {
     // The maximum object size that can be allocated without LOS is restricted by the max immix object size.
     // This might be too restrictive, as our default allocator is bump pointer (nursery allocator) which
@@ -89,7 +91,7 @@ impl<VM: VMBinding> Plan for GenImmix<VM> {
             )
     }
 
-    fn collection_required(&self, space_full: bool, space: Option<&dyn Space<Self::VM>>) -> bool
+    fn collection_required(&self, space_full: bool, space: Option<SpaceStats<Self::VM>>) -> bool
     where
         Self: Sized,
     {
