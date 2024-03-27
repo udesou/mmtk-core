@@ -80,6 +80,12 @@ impl<VM: VMBinding> Plan for StickyImmix<VM> {
         self.immix.common()
     }
 
+    #[cfg(feature = "dump_memory_stats")]
+    fn dump_memory_stats(&self) {
+        self.immix.immix_space.dump_memory_stats();
+        self.common().los.dump_memory_stats();
+    }
+
     fn schedule_collection(&'static self, scheduler: &crate::scheduler::GCWorkScheduler<Self::VM>) {
         let is_full_heap = self.requires_full_heap_collection();
         self.gc_full_heap.store(is_full_heap, Ordering::SeqCst);
@@ -266,7 +272,7 @@ impl<VM: VMBinding> crate::plan::generational::global::GenerationalPlanExt<VM> f
                     );
                     self.immix
                         .immix_space
-                        .trace_object_without_moving(queue, object)
+                        .trace_object_without_moving(queue, object, false)
                 };
 
                 return object;
