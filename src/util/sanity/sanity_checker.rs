@@ -125,6 +125,7 @@ impl<P: Plan> GCWork<P::VM> for ScheduleSanityGC<P> {
         {
             let mut sanity_checker = mmtk.sanity_checker.lock().unwrap();
             let root_edges = &sanity_checker.root_edges.clone();
+            let root_nodes = &sanity_checker.root_nodes.clone();
             for roots in root_edges {
                 scheduler.work_buckets[WorkBucketStage::Closure].add(
                     SanityGCProcessEdges::<P::VM>::new(
@@ -142,7 +143,15 @@ impl<P: Plan> GCWork<P::VM> for ScheduleSanityGC<P> {
                     });
                 }
             }
-            assert!(&sanity_checker.root_nodes.is_empty());
+            for roots in root_nodes {
+                for root in roots {
+                    sanity_checker.heapdump.roots.push(RootEdge {
+                        objref: root.value() as u64,
+                    });
+                }
+            }
+
+            // assert!(&sanity_checker.root_nodes.is_empty());
             for roots in &sanity_checker.root_nodes {
                 scheduler.work_buckets[WorkBucketStage::Closure].add(ProcessRootNode::<
                     P::VM,
@@ -290,7 +299,7 @@ impl<VM: VMBinding> ProcessEdgesWork for SanityGCProcessEdges<VM> {
         let mut sanity_checker = self.mmtk().sanity_checker.lock().unwrap();
         if !sanity_checker.refs.contains(&object) {
             // FIXME steveb consider VM-specific integrity check on reference.
-            assert!(object.is_sane(), "Invalid reference {:?}", object);
+            assert!(object.is_sane::<VM>(), "Invalid reference {:?}", object);
 
             // Let plan check object
             assert!(

@@ -55,7 +55,7 @@ impl PlanConstraints {
             needs_linear_scan: crate::util::constants::SUPPORT_CARD_SCANNING
                 || crate::util::constants::LAZY_SWEEP,
             needs_concurrent_workers: false,
-            may_trace_duplicate_edges: false,
+            may_trace_duplicate_edges: true,
             needs_forward_after_liveness: false,
             needs_log_bit: false,
             barrier: BarrierSelector::NoBarrier,

@@ -82,7 +82,7 @@ where
     func(&mut lock)
 }
 
-/// A test that uses `MockVM`` should use this method to wrap the entire test
+/// A test that uses `MockVM` should use this method to wrap the entire test
 /// that may use `MockVM`.
 ///
 /// # Arguents
@@ -477,6 +477,9 @@ impl crate::vm::ObjectModel<MockVM> for MockVM {
     const LOCAL_MARK_BIT_SPEC: VMLocalMarkBitSpec = VMLocalMarkBitSpec::in_header(0);
     const LOCAL_LOS_MARK_NURSERY_SPEC: VMLocalLOSMarkNurserySpec =
         VMLocalLOSMarkNurserySpec::in_header(0);
+
+    #[cfg(feature = "object_pinning")]
+    const LOCAL_PINNING_BIT_SPEC: VMLocalPinningBitSpec = VMLocalPinningBitSpec::in_header(0);
 
     const OBJECT_REF_OFFSET_LOWER_BOUND: isize = DEFAULT_OBJECT_REF_OFFSET as isize;
 
