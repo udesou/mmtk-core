@@ -241,7 +241,7 @@ impl<P: Plan> GCWork<P::VM> for SanityRelease<P> {
                 });
                 sanity_checker
                     .heapdump
-                    .dump_to_file(format!("heapdump.{}.binpb.zst", gc_count));
+                    .dump_to_file(format!("heapdump.{}.binpb.zst", chrono::offset::Local::now().format("%Y%m%d-%H%M%S%6f")));
             }
             sanity_checker.heapdump.reset();
         }

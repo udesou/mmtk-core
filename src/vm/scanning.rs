@@ -339,14 +339,14 @@ pub trait Scanning<VM: VMBinding> {
     }
 
     fn is_obj_array(_o: ObjectReference) -> bool {
-        unreachable!()
+        false
     }
 
     fn is_val_array(_o: ObjectReference) -> bool {
-        unreachable!()
+        false
     }
 
     fn instance_mirror_info(_o: ObjectReference) -> Option<(u64, u64)> {
-        unreachable!()
+        None
     }
 }
