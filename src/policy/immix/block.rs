@@ -111,6 +111,9 @@ impl Block {
     pub const MARK_TABLE: SideMetadataSpec =
         crate::util::metadata::side_metadata::spec_defs::IX_BLOCK_MARK;
 
+    pub const PINNED_TABLE: SideMetadataSpec =
+        crate::util::metadata::side_metadata::spec_defs::IX_BLOCK_PINNED;
+
     /// Get the chunk containing the block.
     pub fn chunk(&self) -> Chunk {
         Chunk::from_unaligned_address(self.0)
@@ -133,6 +136,22 @@ impl Block {
     pub fn set_state(&self, state: BlockState) {
         let state = u8::from(state);
         Self::MARK_TABLE.store_atomic::<u8>(self.start(), state, Ordering::SeqCst);
+    }
+
+    // Pinned bit
+
+    // Get block pinned state.
+    pub fn get_pinned_state(&self) -> bool {
+        let byte = Self::PINNED_TABLE.load_atomic::<u8>(self.start(), Ordering::SeqCst);
+        byte == 1
+    }
+
+    pub fn set_pinned_state(&self) {
+        Self::PINNED_TABLE.store_atomic::<u8>(self.start(), 1, Ordering::SeqCst);
+    }
+
+    pub fn clear_pinned_state(&self) {
+        Self::PINNED_TABLE.store_atomic::<u8>(self.start(), 0, Ordering::SeqCst);
     }
 
     // Defrag byte
@@ -261,9 +280,11 @@ impl Block {
                         side.bzero_metadata(line.start(), Line::BYTES);
                     }
 
-                    VM::VMObjectModel::binding_global_side_metadata_specs().into_iter().for_each(|spec| {
-                        spec.bzero_metadata(line.start(), Line::BYTES);
-                    });
+                    VM::VMObjectModel::binding_global_side_metadata_specs()
+                        .into_iter()
+                        .for_each(|spec| {
+                            spec.bzero_metadata(line.start(), Line::BYTES);
+                        });
 
                     prev_line_is_marked = false;
                 }

@@ -263,7 +263,11 @@ impl<VM: VMBinding> Space<VM> for ImmixSpace<VM> {
     }
 
     fn enumerate_objects(&self, enumerator: &mut dyn ObjectEnumerator) {
-        object_enum::enumerate_blocks_from_chunk_map::<Block>(self.name(), enumerator, &self.chunk_map);
+        object_enum::enumerate_blocks_from_chunk_map::<Block>(
+            self.name(),
+            enumerator,
+            &self.chunk_map,
+        );
     }
 }
 
@@ -356,6 +360,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
             vec![
                 MetadataSpec::OnSide(Block::DEFRAG_STATE_TABLE),
                 MetadataSpec::OnSide(Block::MARK_TABLE),
+                MetadataSpec::OnSide(Block::PINNED_TABLE),
                 *VM::VMObjectModel::LOCAL_MARK_BIT_SPEC,
                 *VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC,
                 *VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC,
@@ -367,6 +372,7 @@ impl<VM: VMBinding> ImmixSpace<VM> {
                 MetadataSpec::OnSide(Line::MARK_TABLE),
                 MetadataSpec::OnSide(Block::DEFRAG_STATE_TABLE),
                 MetadataSpec::OnSide(Block::MARK_TABLE),
+                MetadataSpec::OnSide(Block::PINNED_TABLE),
                 *VM::VMObjectModel::LOCAL_MARK_BIT_SPEC,
                 *VM::VMObjectModel::LOCAL_FORWARDING_BITS_SPEC,
                 *VM::VMObjectModel::LOCAL_FORWARDING_POINTER_SPEC,
@@ -791,6 +797,11 @@ impl<VM: VMBinding> ImmixSpace<VM> {
         #[cfg(feature = "vo_bit")]
         vo_bit::helper::on_trace_object::<VM>(object);
 
+        // if the object is pinned we mark the block as has pinned
+        if self.is_pinned(object) {
+            Block::containing(object).set_pinned_state();
+        }
+
         if self.attempt_mark(object, self.mark_state) {
             // Mark block and lines
             if !super::BLOCK_ONLY {
@@ -883,6 +894,11 @@ impl<VM: VMBinding> ImmixSpace<VM> {
 
                 if !super::MARK_LINE_AT_SCAN_TIME {
                     self.mark_lines(object);
+                }
+
+                // if the object is pinned we mark the block as has pinned
+                if self.is_pinned(object) {
+                    Block::containing(object).set_pinned_state();
                 }
 
                 object
@@ -1115,8 +1131,12 @@ impl<VM: VMBinding> GCWork<VM> for PrepareBlockState<VM> {
             let is_defrag_source = if !self.space.is_defrag_enabled() {
                 // Do not set any block as defrag source if defrag is disabled.
                 false
+            } else if block.get_pinned_state() {
+                // Do not defrag blocks with pinned objects in them (live from the previous GC)
+                false
             } else if super::DEFRAG_EVERY_BLOCK {
                 // Set every block as defrag source if so desired.
+                // NB: this still won't defrag blocks with pinned objects
                 true
             } else if let Some(defrag_threshold) = self.defrag_threshold {
                 // This GC is a defrag GC.
@@ -1128,6 +1148,8 @@ impl<VM: VMBinding> GCWork<VM> for PrepareBlockState<VM> {
             block.set_as_defrag_source(is_defrag_source);
             // Clear block mark data.
             block.set_state(BlockState::Unmarked);
+            // Clear block pinned state.
+            block.clear_pinned_state();
             debug_assert!(!block.get_state().is_reusable());
             debug_assert_ne!(block.get_state(), BlockState::Marked);
         }

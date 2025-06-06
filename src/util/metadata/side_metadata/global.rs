@@ -1331,8 +1331,8 @@ pub(crate) struct SideMetadataContext {
     pub local: Vec<SideMetadataSpec>,
 }
 
-use crate::vm::VMBinding;
 use crate::vm::ObjectModel;
+use crate::vm::VMBinding;
 impl SideMetadataContext {
     #[allow(clippy::vec_init_then_push)] // allow this, as we conditionally push based on features.
     pub fn new_global_specs<VM: VMBinding>(specs: &[SideMetadataSpec]) -> Vec<SideMetadataSpec> {
